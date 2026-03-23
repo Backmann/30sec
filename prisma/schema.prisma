@@ -1,0 +1,413 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  JUDGE
+  SUPERADMIN
+}
+
+enum TournamentType {
+  WEEKLY
+  MONTHLY
+  SEASON
+  YEARLY
+}
+
+enum TournamentStatus {
+  DRAFT
+  SCHEDULED
+  LIVE
+  FINISHED
+  ARCHIVED
+}
+
+enum MatchStatus {
+  REGISTERED
+  PLAYING
+  WON
+  LOST
+  FINISHED
+}
+
+enum QuestionCategory {
+  LOGIC
+  LANGUAGE
+  DETECTIVE
+  HISTORY
+  SCIENCE
+  IMAGE
+}
+
+enum QuestionStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum JudgementDecision {
+  ACCEPTED
+  REJECTED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  PUSH
+}
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String    @map("password_hash")
+  role            UserRole  @default(USER)
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  profile            Profile?
+  playerStats        PlayerStat?
+  spectatorStats     SpectatorStat?
+  createdTournaments Tournament[]            @relation("TournamentCreator")
+  participations     TournamentParticipant[]
+  answers            Answer[]
+  judgements         Judgement[]              @relation("JudgeJudgements")
+  spectatorAnswers   SpectatorAnswer[]
+  questionReactions  QuestionReaction[]
+  questionVotes      QuestionVote[]
+  notifications      Notification[]
+  adminLogs          AdminLog[]
+  createdQuestions   Question[]              @relation("QuestionCreator")
+
+  @@map("users")
+}
+
+model Profile {
+  id             String    @id @default(uuid())
+  userId         String    @unique @map("user_id")
+  firstName      String    @map("first_name")
+  lastName       String    @map("last_name")
+  nickname       String    @unique
+  nicknameLocked Boolean   @default(true) @map("nickname_locked")
+  phone          String?
+  phoneVerifiedAt DateTime? @map("phone_verified_at")
+  countryCode    String?   @db.VarChar(2) @map("country_code")
+  flagCode       String?   @map("flag_code")
+  language       String
+  showRealName   Boolean   @default(false) @map("show_real_name")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([countryCode])
+  @@index([language])
+  @@map("profiles")
+}
+
+model Rank {
+  id                      String   @id @default(uuid())
+  code                    String   @unique
+  title                   String
+  thresholdCorrectAnswers Int      @map("threshold_correct_answers")
+  icon                    String?
+  sortOrder               Int      @map("sort_order")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  playerStats PlayerStat[]
+
+  @@map("ranks")
+}
+
+model PlayerStat {
+  id              String   @id @default(uuid())
+  userId          String   @unique @map("user_id")
+  rankId          String?  @map("rank_id")
+  totalAnswered   Int      @default(0) @map("total_answered")
+  totalCorrect    Int      @default(0) @map("total_correct")
+  totalWrong      Int      @default(0) @map("total_wrong")
+  accuracyPercent Decimal  @default(0.00) @db.Decimal(5, 2) @map("accuracy_percent")
+  bestStreak      Int      @default(0) @map("best_streak")
+  currentStreak   Int      @default(0) @map("current_streak")
+  weeklyFinals    Int      @default(0) @map("weekly_finals")
+  monthlyFinals   Int      @default(0) @map("monthly_finals")
+  seasonFinals    Int      @default(0) @map("season_finals")
+  yearlyFinals    Int      @default(0) @map("yearly_finals")
+  wins12_0        Int      @default(0) @map("wins_12_0")
+  losses0_12      Int      @default(0) @map("losses_0_12")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rank Rank? @relation(fields: [rankId], references: [id], onDelete: SetNull)
+
+  @@map("player_stats")
+}
+
+model SpectatorStat {
+  id                   String   @id @default(uuid())
+  userId               String   @unique @map("user_id")
+  watchedQuestions      Int      @default(0) @map("watched_questions")
+  savedPersonalAnswers Int      @default(0) @map("saved_personal_answers")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("spectator_stats")
+}
+
+model Tournament {
+  id         String           @id @default(uuid())
+  title      String
+  type       TournamentType
+  theme      String?
+  status     TournamentStatus @default(DRAFT)
+  startAt    DateTime?        @map("start_at")
+  endAt      DateTime?        @map("end_at")
+  maxPlayers Int?             @map("max_players")
+  createdBy  String           @map("created_by")
+  createdAt  DateTime         @default(now()) @map("created_at")
+  updatedAt  DateTime         @updatedAt @map("updated_at")
+
+  creator             User                    @relation("TournamentCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  participants        TournamentParticipant[]
+  tournamentQuestions TournamentQuestion[]
+  answers             Answer[]
+  spectatorAnswers    SpectatorAnswer[]
+  questionReactions   QuestionReaction[]
+  questionVotes       QuestionVote[]
+
+  @@map("tournaments")
+}
+
+model TournamentParticipant {
+  id                 String      @id @default(uuid())
+  userId             String      @map("user_id")
+  tournamentId       String      @map("tournament_id")
+  currentScoreUser   Int         @default(0) @map("current_score_user")
+  currentScoreSystem Int         @default(0) @map("current_score_system")
+  matchStatus        MatchStatus @default(REGISTERED)
+  joinedAt           DateTime    @default(now()) @map("joined_at")
+  finishedAt         DateTime?   @map("finished_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tournamentId])
+  @@index([tournamentId])
+  @@map("tournament_participants")
+}
+
+model Question {
+  id        String           @id @default(uuid())
+  category  QuestionCategory
+  theme     String?
+  hasImage  Boolean          @default(false) @map("has_image")
+  imageUrl  String?          @map("image_url")
+  status    QuestionStatus   @default(DRAFT)
+  createdBy String           @map("created_by")
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+
+  creator          User                   @relation("QuestionCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  localizations    QuestionLocalization[]
+  tournaments      TournamentQuestion[]
+  answers          Answer[]
+  spectatorAnswers SpectatorAnswer[]
+  reactions        QuestionReaction[]
+  votes            QuestionVote[]
+
+  @@map("questions")
+}
+
+model QuestionLocalization {
+  id                     String   @id @default(uuid())
+  questionId             String   @map("question_id")
+  language               String   @db.VarChar(5)
+  questionText           String   @map("question_text")
+  correctAnswerLocalized String   @map("correct_answer_localized")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, language])
+  @@index([language])
+  @@map("question_localizations")
+}
+
+model TournamentQuestion {
+  id           String  @id @default(uuid())
+  tournamentId String  @map("tournament_id")
+  questionId   String  @map("question_id")
+  orderIndex   Int     @map("order_index")
+  isUsed       Boolean @default(false) @map("is_used")
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  question   Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, orderIndex])
+  @@index([tournamentId])
+  @@map("tournament_questions")
+}
+
+model Answer {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  tournamentId String   @map("tournament_id")
+  questionId   String   @map("question_id")
+  answerText   String   @db.VarChar(100) @map("answer_text")
+  submittedAt  DateTime @default(now()) @map("submitted_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  question   Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  judgement  Judgement?
+  aiAssist   AnswerAiAssist?
+
+  @@unique([tournamentId, questionId, userId])
+  @@index([tournamentId])
+  @@index([questionId])
+  @@map("answers")
+}
+
+model AnswerAiAssist {
+  id             String   @id @default(uuid())
+  answerId       String   @unique @map("answer_id")
+  translatedToRu String?  @map("translated_to_ru")
+  semanticHint   String?  @map("semantic_hint")
+  confidence     Decimal? @db.Decimal(5, 2)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  answer Answer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+
+  @@map("answer_ai_assists")
+}
+
+model Judgement {
+  id         String             @id @default(uuid())
+  answerId   String             @unique @map("answer_id")
+  judgeId    String             @map("judge_id")
+  decision   JudgementDecision
+  reasonCode String?            @map("reason_code")
+  judgedAt   DateTime           @map("judged_at")
+  createdAt  DateTime           @default(now()) @map("created_at")
+
+  answer Answer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  judge  User   @relation("JudgeJudgements", fields: [judgeId], references: [id], onDelete: Restrict)
+
+  @@map("judgements")
+}
+
+model SpectatorAnswer {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  tournamentId String   @map("tournament_id")
+  questionId   String   @map("question_id")
+  answerText   String   @db.VarChar(100) @map("answer_text")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  question   Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tournamentId, questionId])
+  @@index([userId])
+  @@index([tournamentId])
+  @@index([questionId])
+  @@map("spectator_answers")
+}
+
+model ReactionType {
+  id        String  @id @default(uuid())
+  code      String  @unique
+  emoji     String
+  label     String?
+  isActive  Boolean @default(true) @map("is_active")
+  sortOrder Int     @map("sort_order")
+
+  questionReactions QuestionReaction[]
+
+  @@map("reaction_types")
+}
+
+model QuestionReaction {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  tournamentId String   @map("tournament_id")
+  questionId   String   @map("question_id")
+  reactionCode String   @map("reaction_code")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tournament   Tournament   @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  question     Question     @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  reactionType ReactionType @relation(fields: [reactionCode], references: [code], onDelete: Restrict)
+
+  @@unique([userId, tournamentId, questionId])
+  @@index([questionId])
+  @@index([tournamentId])
+  @@map("question_reactions")
+}
+
+model QuestionVote {
+  id           String   @id @default(uuid())
+  tournamentId String   @map("tournament_id")
+  voterUserId  String   @map("voter_user_id")
+  questionId   String   @map("question_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  voter      User       @relation(fields: [voterUserId], references: [id], onDelete: Cascade)
+  question   Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, voterUserId])
+  @@index([questionId])
+  @@map("question_votes")
+}
+
+model Notification {
+  id        String              @id @default(uuid())
+  userId    String              @map("user_id")
+  type      String
+  title     String
+  body      String
+  channel   NotificationChannel
+  isRead    Boolean             @default(false) @map("is_read")
+  createdAt DateTime            @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model AdminLog {
+  id          String   @id @default(uuid())
+  adminUserId String   @map("admin_user_id")
+  actionType  String   @map("action_type")
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id")
+  payloadJson Json?    @map("payload_json")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  admin User @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId])
+  @@index([actionType])
+  @@index([entityType])
+  @@map("admin_logs")
+}
