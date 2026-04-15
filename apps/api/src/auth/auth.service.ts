@@ -263,4 +263,40 @@ export class AuthService {
     const language = user.profile?.language || 'ru';
     return this.sendVerificationCode(user.email, language);
   }
+
+  // ─── Password Reset ─────────────────────────
+  async requestPasswordReset(email: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+      include: { profile: true },
+    });
+    // Always return success (don't reveal if email exists)
+    if (!user) return { message: 'If account exists, code sent' };
+
+    const language = user.profile?.language || 'ru';
+    await this.sendVerificationCode(user.email, language);
+    return { message: 'If account exists, code sent' };
+  }
+
+  async resetPassword(email: string, code: string, newPassword: string) {
+    // Verify the code first
+    const stored = verificationCodes.get(email.toLowerCase());
+    if (!stored) throw new BadRequestException('Код не найден');
+    if (new Date() > stored.expiresAt) {
+      verificationCodes.delete(email.toLowerCase());
+      throw new BadRequestException('Код истёк');
+    }
+    if (stored.code !== code) throw new BadRequestException('Неверный код');
+
+    if (newPassword.length < 8) throw new BadRequestException('Пароль минимум 8 символов');
+
+    const hashedPassword = await argon2.hash(newPassword);
+    await this.prisma.user.update({
+      where: { email: email.toLowerCase() },
+      data: { passwordHash: hashedPassword },
+    });
+
+    verificationCodes.delete(email.toLowerCase());
+    return { message: 'Password reset successfully', success: true };
+  }
 }

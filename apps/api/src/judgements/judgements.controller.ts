@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Delete,
   Get,
   Param,
   Body,
@@ -22,6 +23,11 @@ export class JudgementsController {
   @Post()
   judge(@Body() dto: JudgeAnswerDto, @Request() req) {
     return this.judgementsService.judge(dto, req.user.sub);
+  }
+
+  @Delete(':id/undo')
+  undo(@Param('id') id: string) {
+    return this.judgementsService.undoJudgement(id);
   }
 
   @Get('tournament/:tournamentId')

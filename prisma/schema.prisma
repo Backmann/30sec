@@ -30,6 +30,9 @@ enum TournamentStatus {
 }
 
 enum MatchStatus {
+  PENDING
+  APPROVED
+  REJECTED
   REGISTERED
   PLAYING
   WON
@@ -197,7 +200,7 @@ model TournamentParticipant {
   tournamentId       String      @map("tournament_id")
   currentScoreUser   Int         @default(0) @map("current_score_user")
   currentScoreSystem Int         @default(0) @map("current_score_system")
-  matchStatus        MatchStatus @default(REGISTERED)
+  matchStatus        MatchStatus @default(PENDING)
   joinedAt           DateTime    @default(now()) @map("joined_at")
   finishedAt         DateTime?   @map("finished_at")
 
