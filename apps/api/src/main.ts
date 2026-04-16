@@ -1,3 +1,15 @@
+import * as Sentry from '@sentry/node';
+
+// Initialize Sentry BEFORE any other code
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'production',
+    tracesSampleRate: 0.1,
+  });
+  console.log('✓ Sentry initialized');
+}
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';

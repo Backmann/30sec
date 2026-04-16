@@ -6,12 +6,14 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { Response } from 'express';
+import * as Sentry from '@sentry/node';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest();
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Внутренняя ошибка сервера';
@@ -28,6 +30,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
       }
     } else if (exception instanceof Error) {
       console.error('Unhandled error:', exception.message, exception.stack);
+    }
+
+    // Report 5xx and non-HTTP errors to Sentry (skip 4xx user errors)
+    if (status >= 500 || !(exception instanceof HttpException)) {
+      Sentry.captureException(exception, {
+        tags: { path: request?.url, method: request?.method, status },
+        user: request?.user ? { id: request.user.sub, email: request.user.email } : undefined,
+      });
     }
 
     response.status(status).json({
