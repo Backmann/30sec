@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
@@ -186,4 +187,61 @@ export class ProfilesService {
         : null,
     };
   }
+  // GDPR: Export all user data
+  async exportUserData(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        profile: true,
+        playerStats: true,
+        spectatorStats: true,
+        answers: { include: { judgement: true } },
+        participations: { include: { tournament: { select: { title: true, type: true, status: true, startAt: true } } } },
+        notifications: true,
+        spectatorAnswers: true,
+        questionReactions: true,
+        questionVotes: true,
+      },
+    });
+    if (!user) throw new Error('User not found');
+    const { passwordHash, ...safe } = user as any;
+    return {
+      exportDate: new Date().toISOString(),
+      userId,
+      data: safe,
+      _note: 'This is a complete export of your personal data from 30sec. Passwords are excluded for security.',
+    };
+  }
+
+  // GDPR: Delete (anonymize) account
+  async deleteAccount(userId: string, password: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new Error('User not found');
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) throw new Error('Invalid password');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.profile.update({
+        where: { userId },
+        data: {
+          nickname: `deleted_${userId.substring(0, 8)}`,
+          firstName: 'Deleted',
+          lastName: 'User',
+          phone: null,
+          countryCode: null,
+          flagCode: null,
+        },
+      });
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          email: `deleted_${userId}@deleted.local`,
+          passwordHash: '',
+          isActive: false,
+          deletedAt: new Date(),
+        },
+      });
+    });
+    return { success: true, message: 'Account successfully deleted. Your tournament history is anonymized but preserved for data integrity.' };
+  }
+
 }
