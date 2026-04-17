@@ -102,4 +102,35 @@ export class MailService {
       return true;
     }
   }
+
+  async sendNotification(to: string, title: string, body: string, language: string = 'ru') {
+    const html = `
+      <div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:480px;margin:0 auto;padding:40px 20px;background:#0a0e1a">
+        <div style="text-align:center;margin-bottom:30px">
+          <h1 style="font-size:36px;font-weight:900;margin:0">
+            <span style="color:#ffffff">30</span><span style="color:#0c8de6">sec</span><span style="color:#f59e0b">.</span>
+          </h1>
+        </div>
+        <div style="background:#141824;border-radius:16px;padding:30px;color:#ffffff">
+          <h2 style="margin:0 0 15px;font-size:20px;color:#0c8de6">${title}</h2>
+          <p style="margin:0;line-height:1.6;color:#cbd5e1">${body}</p>
+        </div>
+        <p style="text-align:center;color:#64748b;font-size:12px;margin-top:30px">
+          <a href="https://30sec.org" style="color:#64748b">30sec.org</a>
+        </p>
+      </div>
+    `;
+
+    if (this.transporter) {
+      await this.transporter.sendMail({
+        from: this.config.get<string>('SMTP_FROM'),
+        to,
+        subject: `30sec. — ${title}`,
+        html,
+      });
+    } else {
+      console.log(`[MAIL STUB] To: ${to}, Title: ${title}, Body: ${body}`);
+    }
+  }
+
 }
