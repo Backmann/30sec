@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { QueueService } from '../queues/queue.service';
 import { CreateTournamentDto } from './dto/create-tournament.dto';
 import { UpdateTournamentDto } from './dto/update-tournament.dto';
 
@@ -37,7 +39,25 @@ export class TournamentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeService,
+    private readonly notifications: NotificationsService,
+    private readonly queue: QueueService,
   ) {}
+
+  // Helper: notify user in-app + email
+  private async notifyUser(userId: string, title: string, body: string, sendEmail = true) {
+    await this.notifications.create(userId, { type: 'TOURNAMENT', title, body, channel: 'IN_APP' });
+    if (sendEmail) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
+      if (user) {
+        await this.queue.queueEmail({
+          type: 'notification',
+          to: user.email,
+          language: user.profile?.language || 'ru',
+          data: { title, body },
+        });
+      }
+    }
+  }
 
   async create(dto: CreateTournamentDto, adminId: string) {
     if (!dto.startAt) throw new BadRequestException('Укажите дату и время старта');
@@ -72,6 +92,20 @@ export class TournamentsService {
     const u = await this.prisma.tournament.update({ where: { id }, data: { status: 'LIVE', startAt: new Date() } });
     // Set approved participants to PLAYING
     await this.prisma.tournamentParticipant.updateMany({ where: { tournamentId: id, matchStatus: 'APPROVED' }, data: { matchStatus: 'PLAYING' } });
+
+    // Notify all participants that tournament started
+    const playingParticipants = await this.prisma.tournamentParticipant.findMany({
+      where: { tournamentId: id, matchStatus: 'PLAYING' },
+      select: { userId: true },
+    });
+    for (const p of playingParticipants) {
+      await this.notifyUser(
+        p.userId,
+        'Турнир начался! 🎮',
+        `Турнир "${u.title}" только что стартовал. Заходите играть прямо сейчас!`,
+      );
+    }
+
     this.realtime.tournamentStarted(id, { title: u.title, type: u.type });
     this.realtime.broadcastTournamentListUpdate();
     return u;
@@ -81,6 +115,20 @@ export class TournamentsService {
     const t = await this.prisma.tournament.findUnique({ where: { id } });
     if (!t) throw new NotFoundException('Не найден');
     const u = await this.prisma.tournament.update({ where: { id }, data: { status: 'FINISHED', endAt: new Date() } });
+
+    // Notify all participants about tournament end
+    const participants = await this.prisma.tournamentParticipant.findMany({
+      where: { tournamentId: id, matchStatus: { in: ['PLAYING', 'WON', 'LOST'] } },
+      select: { userId: true },
+    });
+    for (const p of participants) {
+      await this.notifyUser(
+        p.userId,
+        'Турнир завершён 🏆',
+        `Турнир "${u.title}" завершён. Посмотрите свои результаты и позицию в таблице!`,
+      );
+    }
+
     this.realtime.tournamentFinished(id);
     this.realtime.broadcastTournamentListUpdate();
     return u;
@@ -115,22 +163,60 @@ export class TournamentsService {
     const participant = await this.prisma.tournamentParticipant.create({
       data: { userId, tournamentId, matchStatus: 'PENDING' },
     });
+
+    // Notify admins about new application (in-app only, no email spam)
+    const admins = await this.prisma.user.findMany({
+      where: { role: { in: ['ADMIN', 'SUPERADMIN'] }, isActive: true },
+      select: { id: true },
+    });
+    const applicant = await this.prisma.profile.findUnique({ where: { userId }, select: { nickname: true } });
+    for (const admin of admins) {
+      await this.notifications.create(admin.id, {
+        type: 'ADMIN_APPLICATION',
+        title: 'Новая заявка на турнир',
+        body: `${applicant?.nickname || 'Игрок'} подал заявку на "${t.title}"`,
+        channel: 'IN_APP',
+      });
+    }
+
     this.realtime.broadcastTournamentListUpdate();
     return participant;
   }
 
   // Admin approves participant
   async approveParticipant(participantId: string) {
-    const p = await this.prisma.tournamentParticipant.findUnique({ where: { id: participantId } });
+    const p = await this.prisma.tournamentParticipant.findUnique({
+      where: { id: participantId },
+      include: { tournament: { select: { title: true } } },
+    });
     if (!p) throw new NotFoundException('Участник не найден');
-    return this.prisma.tournamentParticipant.update({ where: { id: participantId }, data: { matchStatus: 'APPROVED' } });
+    const updated = await this.prisma.tournamentParticipant.update({ where: { id: participantId }, data: { matchStatus: 'APPROVED' } });
+
+    await this.notifyUser(
+      p.userId,
+      'Заявка одобрена ✓',
+      `Вы допущены к турниру "${p.tournament.title}". Ждём вас на старте!`,
+    );
+
+    return updated;
   }
 
   // Admin rejects participant
   async rejectParticipant(participantId: string) {
-    const p = await this.prisma.tournamentParticipant.findUnique({ where: { id: participantId } });
+    const p = await this.prisma.tournamentParticipant.findUnique({
+      where: { id: participantId },
+      include: { tournament: { select: { title: true } } },
+    });
     if (!p) throw new NotFoundException('Участник не найден');
-    return this.prisma.tournamentParticipant.update({ where: { id: participantId }, data: { matchStatus: 'REJECTED' } });
+    const updated = await this.prisma.tournamentParticipant.update({ where: { id: participantId }, data: { matchStatus: 'REJECTED' } });
+
+    await this.notifyUser(
+      p.userId,
+      'Заявка отклонена',
+      `К сожалению, ваша заявка на турнир "${p.tournament.title}" была отклонена. Не расстраивайтесь, попробуйте другие турниры!`,
+    );
+
+    return updated;
   }
 
   async launchNextQuestion(tournamentId: string) {
