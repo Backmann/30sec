@@ -1,6 +1,13 @@
-import { IsString, IsOptional, IsBoolean, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, MaxLength, MinLength, Matches } from 'class-validator';
 
 export class UpdateProfileDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(3, { message: 'Никнейм минимум 3 символа' })
+  @MaxLength(20, { message: 'Никнейм максимум 20 символов' })
+  @Matches(/^[a-zA-Z0-9_]+$/, { message: 'Никнейм: только буквы, цифры и _' })
+  nickname?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(50)

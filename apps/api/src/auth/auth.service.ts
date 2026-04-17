@@ -11,6 +11,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { GoogleAuthDto } from './dto/google-auth.dto';
+import { OAuth2Client } from 'google-auth-library';
 
 // Store verification codes in memory (Redis in production later)
 const verificationCodes = new Map<string, { code: string; expiresAt: Date }>();
@@ -191,6 +193,97 @@ export class AuthService {
               : null,
           }
         : null,
+    };
+  }
+
+
+  async googleAuth(dto: GoogleAuthDto) {
+    const client = new OAuth2Client(this.config.get('GOOGLE_CLIENT_ID'));
+
+    let ticket;
+    try {
+      ticket = await client.verifyIdToken({
+        idToken: dto.credential,
+        audience: this.config.get('GOOGLE_CLIENT_ID'),
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid Google token');
+    }
+
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email) {
+      throw new UnauthorizedException('Google token missing email');
+    }
+
+    const { sub: googleId, email, given_name: firstName, family_name: lastName } = payload;
+
+    let user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { googleId },
+          { email: email.toLowerCase() },
+        ],
+      },
+      include: { profile: true },
+    });
+
+    if (user) {
+      if (!user.googleId) {
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            googleId,
+            emailVerifiedAt: user.emailVerifiedAt || new Date(),
+          },
+          include: { profile: true },
+        });
+      }
+    } else {
+      const nickname = email.split('@')[0] + '_' + Math.floor(Math.random() * 1000).toString();
+      user = await this.prisma.user.create({
+        data: {
+          email: email.toLowerCase(),
+          googleId,
+          emailVerifiedAt: new Date(),
+          profile: {
+            create: {
+              firstName: firstName || '',
+              lastName: lastName || '',
+              nickname,
+              language: 'ru',
+            },
+          },
+          playerStats: {
+            create: {},
+          },
+        },
+        include: { profile: true },
+      });
+    }
+
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account deactivated');
+    }
+
+    const tokens = await this.generateTokens(user.id, user.email, user.role);
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        emailVerifiedAt: user.emailVerifiedAt,
+        profile: user.profile
+          ? {
+              nickname: user.profile.nickname,
+              firstName: user.profile.firstName,
+              lastName: user.profile.lastName,
+              language: user.profile.language,
+              countryCode: user.profile.countryCode,
+            }
+          : null,
+      },
+      ...tokens,
     };
   }
 

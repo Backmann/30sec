@@ -64,17 +64,42 @@ export class ProfilesService {
     });
     if (!profile) throw new NotFoundException('Профиль не найден');
 
+    const data: any = {
+      firstName: dto.firstName ?? undefined,
+      lastName: dto.lastName ?? undefined,
+      language: dto.language ?? undefined,
+      countryCode: dto.countryCode ?? undefined,
+      flagCode: dto.countryCode?.toLowerCase() ?? undefined,
+      showRealName: dto.showRealName ?? undefined,
+      phone: dto.phone ?? undefined,
+    };
+
+    // Nickname change logic
+    if (dto.nickname && dto.nickname !== profile.nickname) {
+      // Check 30-day cooldown (skip if nickname was auto-generated, i.e. never changed)
+      if (profile.nicknameChangedAt) {
+        const daysSinceChange = (Date.now() - new Date(profile.nicknameChangedAt).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSinceChange < 30) {
+          const daysLeft = Math.ceil(30 - daysSinceChange);
+          throw new BadRequestException(`Никнейм можно менять раз в 30 дней. Осталось ${daysLeft} дн.`);
+        }
+      }
+
+      // Check uniqueness
+      const existing = await this.prisma.profile.findUnique({
+        where: { nickname: dto.nickname },
+      });
+      if (existing && existing.userId !== userId) {
+        throw new BadRequestException('Этот никнейм уже занят');
+      }
+
+      data.nickname = dto.nickname;
+      data.nicknameChangedAt = new Date();
+    }
+
     return this.prisma.profile.update({
       where: { userId },
-      data: {
-        firstName: dto.firstName ?? undefined,
-        lastName: dto.lastName ?? undefined,
-        language: dto.language ?? undefined,
-        countryCode: dto.countryCode ?? undefined,
-        flagCode: dto.countryCode?.toLowerCase() ?? undefined,
-        showRealName: dto.showRealName ?? undefined,
-        phone: dto.phone ?? undefined,
-      },
+      data,
     });
   }
 

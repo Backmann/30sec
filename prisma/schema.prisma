@@ -69,7 +69,8 @@ enum NotificationChannel {
 model User {
   id              String    @id @default(uuid())
   email           String    @unique
-  passwordHash    String    @map("password_hash")
+  passwordHash    String?   @map("password_hash")
+  googleId        String?   @unique @map("google_id")
   role            UserRole  @default(USER)
   emailVerifiedAt DateTime? @map("email_verified_at")
   isActive        Boolean   @default(true) @map("is_active")
@@ -101,6 +102,7 @@ model Profile {
   lastName       String    @map("last_name")
   nickname       String    @unique
   nicknameLocked Boolean   @default(true) @map("nickname_locked")
+  nicknameChangedAt DateTime? @map("nickname_changed_at")
   phone          String?
   phoneVerifiedAt DateTime? @map("phone_verified_at")
   countryCode    String?   @db.VarChar(2) @map("country_code")

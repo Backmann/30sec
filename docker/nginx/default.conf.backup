@@ -38,7 +38,6 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
     client_max_body_size 10M;
-    add_header X-Robots-Tag "noindex, nofollow" always;
 
     location /api/ {
         proxy_pass http://api:3000/api/;
