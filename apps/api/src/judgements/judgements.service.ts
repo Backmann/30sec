@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { QueueService } from '../queues/queue.service';
 import { JudgeAnswerDto } from './dto/judge-answer.dto';
 
 @Injectable()
@@ -15,6 +17,8 @@ export class JudgementsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeService,
+    private readonly notifications: NotificationsService,
+    private readonly queue: QueueService,
   ) {}
 
   // ─── Admin: Judge an answer ───────────────────
