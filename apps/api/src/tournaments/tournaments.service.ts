@@ -64,6 +64,12 @@ export class TournamentsService {
     const t = await this.prisma.tournament.create({
       data: { title: dto.title, type: dto.type, theme: dto.theme || null, startAt: new Date(dto.startAt), maxPlayers: null, createdBy: adminId },
     });
+
+    // Schedule 15-min reminder
+    if (t.startAt) {
+      await this.queue.scheduleTournamentReminder(t.id, t.startAt);
+    }
+
     this.realtime.broadcastTournamentListUpdate();
     return t;
   }
@@ -76,6 +82,12 @@ export class TournamentsService {
     const u = await this.prisma.tournament.update({
       where: { id }, data: { title: dto.title ?? undefined, theme: dto.theme ?? undefined, startAt: dto.startAt ? new Date(dto.startAt) : undefined, status: dto.status ?? undefined },
     });
+
+    // Re-schedule reminder if startAt was updated
+    if (dto.startAt && u.startAt) {
+      await this.queue.scheduleTournamentReminder(u.id, u.startAt);
+    }
+
     this.realtime.broadcastTournamentListUpdate();
     return u;
   }
@@ -90,6 +102,7 @@ export class TournamentsService {
     if (t.participants.filter(p => p.matchStatus === 'APPROVED').length === 0) throw new BadRequestException('Нет одобренных участников');
 
     const u = await this.prisma.tournament.update({ where: { id }, data: { status: 'LIVE', startAt: new Date() } });
+    await this.queue.cancelTournamentReminder(id);
     // Set approved participants to PLAYING
     await this.prisma.tournamentParticipant.updateMany({ where: { tournamentId: id, matchStatus: 'APPROVED' }, data: { matchStatus: 'PLAYING' } });
 
@@ -138,6 +151,7 @@ export class TournamentsService {
     const t = await this.prisma.tournament.findUnique({ where: { id } });
     if (!t) throw new NotFoundException('Не найден');
     if (t.status === 'LIVE') throw new BadRequestException('Нельзя удалить активный');
+    await this.queue.cancelTournamentReminder(id);
     await this.prisma.tournamentQuestion.deleteMany({ where: { tournamentId: id } });
     await this.prisma.judgement.deleteMany({ where: { answer: { tournamentId: id } } });
     await this.prisma.answer.deleteMany({ where: { tournamentId: id } });
