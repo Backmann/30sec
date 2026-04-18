@@ -48,22 +48,26 @@ export class AuthController {
     return this.authService.getMe(req.user.sub);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('verify-email')
   async verifyEmail(@Body() body: { email: string; code: string }) {
     return this.authService.verifyEmail(body.email, body.code);
   }
 
+  @Throttle({ default: { limit: 3, ttl: 300000 } })
   @UseGuards(JwtAuthGuard)
   @Post('resend-code')
   async resendCode(@Request() req) {
     return this.authService.resendVerificationCode(req.user.sub);
   }
 
+  @Throttle({ default: { limit: 3, ttl: 300000 } })
   @Post('forgot-password')
   async forgotPassword(@Body() body: { email: string }) {
     return this.authService.requestPasswordReset(body.email);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('reset-password')
   async resetPassword(@Body() body: { email: string; code: string; newPassword: string }) {
     return this.authService.resetPassword(body.email, body.code, body.newPassword);
