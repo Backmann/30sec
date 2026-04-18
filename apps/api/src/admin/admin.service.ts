@@ -43,6 +43,9 @@ export class AdminService {
 
   // ─── Dashboard stats ──────────────────────────
   async getDashboardStats() {
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
     const [
       totalUsers,
       totalTournaments,
@@ -50,6 +53,11 @@ export class AdminService {
       totalQuestions,
       totalAnswers,
       totalJudgements,
+      pendingApplications,
+      newUsersToday,
+      upcomingTournaments,
+      liveTournamentsList,
+      recentActivity,
     ] = await Promise.all([
       this.prisma.user.count({ where: { isActive: true } }),
       this.prisma.tournament.count(),
@@ -57,6 +65,29 @@ export class AdminService {
       this.prisma.question.count(),
       this.prisma.answer.count(),
       this.prisma.judgement.count(),
+      this.prisma.tournamentParticipant.count({ where: { matchStatus: 'PENDING' } }),
+      this.prisma.user.count({ where: { createdAt: { gte: oneDayAgo } } }),
+      this.prisma.tournament.findMany({
+        where: { status: { in: ['DRAFT', 'SCHEDULED'] }, startAt: { gte: now } },
+        orderBy: { startAt: 'asc' },
+        take: 5,
+        include: {
+          _count: { select: { tournamentQuestions: true, participants: true } },
+        },
+      }),
+      this.prisma.tournament.findMany({
+        where: { status: 'LIVE' },
+        include: {
+          _count: { select: { participants: true } },
+        },
+      }),
+      this.prisma.adminLog.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 8,
+        include: {
+          admin: { include: { profile: { select: { nickname: true } } } },
+        },
+      }),
     ]);
 
     return {
@@ -66,6 +97,30 @@ export class AdminService {
       totalQuestions,
       totalAnswers,
       totalJudgements,
+      pendingApplications,
+      newUsersToday,
+      upcomingTournaments: upcomingTournaments.map(t => ({
+        id: t.id,
+        title: t.title,
+        type: t.type,
+        startAt: t.startAt,
+        questionsCount: t._count.tournamentQuestions,
+        questionsRequired: 23,
+        participantsCount: t._count.participants,
+        ready: t._count.tournamentQuestions >= 23,
+      })),
+      liveTournamentsList: liveTournamentsList.map(t => ({
+        id: t.id,
+        title: t.title,
+        participantsCount: t._count.participants,
+      })),
+      recentActivity: recentActivity.map(log => ({
+        id: log.id,
+        actionType: log.actionType,
+        entityType: log.entityType,
+        adminNickname: log.admin.profile?.nickname || log.admin.email,
+        createdAt: log.createdAt,
+      })),
     };
   }
 
