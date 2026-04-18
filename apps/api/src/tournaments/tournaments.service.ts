@@ -204,6 +204,10 @@ export class TournamentsService {
       include: { tournament: { select: { title: true } } },
     });
     if (!p) throw new NotFoundException('Участник не найден');
+
+    // Idempotency: skip if already approved (prevents duplicate notifications on double-click)
+    if (p.matchStatus === 'APPROVED') return p;
+
     const updated = await this.prisma.tournamentParticipant.update({ where: { id: participantId }, data: { matchStatus: 'APPROVED' } });
 
     await this.notifyUser(
@@ -222,6 +226,10 @@ export class TournamentsService {
       include: { tournament: { select: { title: true } } },
     });
     if (!p) throw new NotFoundException('Участник не найден');
+
+    // Idempotency: skip if already rejected
+    if (p.matchStatus === 'REJECTED') return p;
+
     const updated = await this.prisma.tournamentParticipant.update({ where: { id: participantId }, data: { matchStatus: 'REJECTED' } });
 
     await this.notifyUser(
