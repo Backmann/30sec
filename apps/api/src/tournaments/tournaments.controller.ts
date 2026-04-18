@@ -12,11 +12,13 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class TournamentsController {
   constructor(private readonly tournamentsService: TournamentsService) {}
 
+  @UseGuards(JwtAuthGuard)
   @Get()
-  findAll(@Query('status') status?: string) { return this.tournamentsService.findAll(status); }
+  findAll(@Request() req, @Query('status') status?: string) { return this.tournamentsService.findAll(req.user.sub, status); }
 
+  @UseGuards(JwtAuthGuard)
   @Get(':id')
-  findOne(@Param('id') id: string) { return this.tournamentsService.findOne(id); }
+  findOne(@Param('id') id: string, @Request() req) { return this.tournamentsService.findOne(id, req.user.sub); }
 
   @Get(':id/leaderboard')
   leaderboard(@Param('id') id: string) { return this.tournamentsService.leaderboard(id); }

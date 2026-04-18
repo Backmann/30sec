@@ -11,11 +11,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { VerificationCodesService } from './verification-codes.service';
 import { GoogleAuthDto } from './dto/google-auth.dto';
 import { OAuth2Client } from 'google-auth-library';
-
-// Store verification codes in memory (Redis in production later)
-const verificationCodes = new Map<string, { code: string; expiresAt: Date }>();
 
 @Injectable()
 export class AuthService {
@@ -24,6 +22,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly mail: MailService,
+    private readonly verificationCodes: VerificationCodesService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -103,6 +102,11 @@ export class AuthService {
 
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Неверный email или пароль');
+    }
+
+    // Google OAuth users have no password — they cannot login via password
+    if (!user.passwordHash) {
+      throw new UnauthorizedException('Этот аккаунт зарегистрирован через Google. Войдите через Google.');
     }
 
     // Verify password
@@ -311,27 +315,19 @@ export class AuthService {
 
   async sendVerificationCode(email: string, language: string = 'ru') {
     const code = this.generateCode();
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-
-    verificationCodes.set(email.toLowerCase(), { code, expiresAt });
+    await this.verificationCodes.set(email, code);
     await this.mail.sendVerificationCode(email, code, language);
-
     return { message: 'Verification code sent' };
   }
 
   async verifyEmail(email: string, code: string) {
-    const stored = verificationCodes.get(email.toLowerCase());
+    const stored = await this.verificationCodes.get(email);
 
     if (!stored) {
-      throw new BadRequestException('Код не найден. Запросите новый.');
+      throw new BadRequestException('Код не найден или истёк. Запросите новый.');
     }
 
-    if (new Date() > stored.expiresAt) {
-      verificationCodes.delete(email.toLowerCase());
-      throw new BadRequestException('Код истёк. Запросите новый.');
-    }
-
-    if (stored.code !== code) {
+    if (stored !== code) {
       throw new BadRequestException('Неверный код');
     }
 
@@ -341,7 +337,7 @@ export class AuthService {
       data: { emailVerifiedAt: new Date() },
     });
 
-    verificationCodes.delete(email.toLowerCase());
+    await this.verificationCodes.delete(email);
     return { message: 'Email verified', verified: true };
   }
 
@@ -373,13 +369,9 @@ export class AuthService {
 
   async resetPassword(email: string, code: string, newPassword: string) {
     // Verify the code first
-    const stored = verificationCodes.get(email.toLowerCase());
-    if (!stored) throw new BadRequestException('Код не найден');
-    if (new Date() > stored.expiresAt) {
-      verificationCodes.delete(email.toLowerCase());
-      throw new BadRequestException('Код истёк');
-    }
-    if (stored.code !== code) throw new BadRequestException('Неверный код');
+    const stored = await this.verificationCodes.get(email);
+    if (!stored) throw new BadRequestException('Код не найден или истёк');
+    if (stored !== code) throw new BadRequestException('Неверный код');
 
     if (newPassword.length < 8) throw new BadRequestException('Пароль минимум 8 символов');
 
@@ -389,7 +381,7 @@ export class AuthService {
       data: { passwordHash: hashedPassword },
     });
 
-    verificationCodes.delete(email.toLowerCase());
+    await this.verificationCodes.delete(email);
     return { message: 'Password reset successfully', success: true };
   }
 }

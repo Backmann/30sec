@@ -285,9 +285,30 @@ export class TournamentsService {
     return { added, total: existing + added };
   }
 
-  async findAll(status?: string) {
+
+  // Remove correct answers from questions unless user is admin
+  private sanitizeQuestions(tournamentData: any, isAdmin: boolean) {
+    if (isAdmin) return tournamentData;
+    if (tournamentData.tournamentQuestions) {
+      tournamentData.tournamentQuestions = tournamentData.tournamentQuestions.map((tq: any) => ({
+        ...tq,
+        question: tq.question ? {
+          ...tq.question,
+          localizations: tq.question.localizations?.map((l: any) => ({
+            ...l,
+            correctAnswerLocalized: undefined,
+          })),
+        } : tq.question,
+      }));
+    }
+    return tournamentData;
+  }
+
+  async findAll(userId: string, status?: string) {
     const where = status ? { status: status as any } : {};
-    return this.prisma.tournament.findMany({
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
+    const tournaments = await this.prisma.tournament.findMany({
       where, orderBy: { createdAt: 'desc' },
       include: {
         _count: { select: { participants: true } },
@@ -295,9 +316,12 @@ export class TournamentsService {
         tournamentQuestions: { orderBy: { orderIndex: 'asc' }, include: { question: { include: { localizations: true } } } },
       },
     });
+    return tournaments.map(t => this.sanitizeQuestions(t, isAdmin));
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
     const t = await this.prisma.tournament.findUnique({
       where: { id },
       include: {
@@ -307,7 +331,7 @@ export class TournamentsService {
       },
     });
     if (!t) throw new NotFoundException('Не найден');
-    return t;
+    return this.sanitizeQuestions(t, isAdmin);
   }
 
   async leaderboard(tid: string) {
@@ -384,6 +408,16 @@ export class TournamentsService {
       }
     }
 
+    // Load user role to decide if correct answer should be exposed
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPERADMIN';
+    // Show correct answer only when: admin, OR judging phase, OR user already answered and got judgement
+    const userAlreadyJudged = !!(myAnswer && myAnswer.judgement);
+    const canSeeCorrectAnswer = isAdmin || phase === 'judging' || userAlreadyJudged;
+
     return {
       status: tournament.status,
       currentQuestion: lastUsed ? {
@@ -392,7 +426,7 @@ export class TournamentsService {
         localizations: lastUsed.question.localizations.map(l => ({
           language: l.language,
           questionText: l.questionText,
-          correctAnswer: l.correctAnswerLocalized,
+          correctAnswer: canSeeCorrectAnswer ? l.correctAnswerLocalized : undefined,
         })),
       } : null,
       phase,
