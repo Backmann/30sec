@@ -92,6 +92,7 @@ model User {
   adminLogs          AdminLog[]
   createdQuestions   Question[]              @relation("QuestionCreator")
 
+  @@index([role, isActive])
   @@map("users")
 }
 
@@ -193,6 +194,9 @@ model Tournament {
   questionReactions   QuestionReaction[]
   questionVotes       QuestionVote[]
 
+  @@index([status])
+  @@index([startAt])
+  @@index([createdAt])
   @@map("tournaments")
 }
 
@@ -397,6 +401,7 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, isRead])
+  @@index([userId, createdAt])
   @@map("notifications")
 }
 
