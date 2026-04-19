@@ -342,6 +342,127 @@ export class TournamentsService {
     return this.sanitizeQuestions(t, isAdmin);
   }
 
+  // ─── Live broadcast state for admin's live observation page ─────
+  async getLiveState(tournamentId: string, userId: string) {
+    // Verify admin role
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
+    if (!isAdmin) throw new NotFoundException('Not found');
+
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        tournamentQuestions: {
+          orderBy: { orderIndex: 'asc' },
+          include: { question: { include: { localizations: true } } },
+        },
+        participants: {
+          where: { matchStatus: { in: ['APPROVED', 'PLAYING', 'WON', 'LOST', 'FINISHED'] } },
+          include: {
+            user: { include: { profile: { select: { nickname: true, countryCode: true, flagCode: true } } } },
+          },
+          orderBy: { currentScoreUser: 'desc' },
+        },
+      },
+    });
+    if (!tournament) throw new NotFoundException('Tournament not found');
+
+    const currentTQ = tournament.tournamentQuestions.filter(tq => tq.isUsed).pop();
+    const totalQuestions = tournament.tournamentQuestions.length;
+    const currentQuestionNumber = tournament.tournamentQuestions.filter(tq => tq.isUsed).length;
+    const remainingQuestions = totalQuestions - currentQuestionNumber;
+
+    // Live phase + timer from realtime gateway
+    const gameState = this.realtime.getGameState(tournamentId);
+    let phase = 'idle';
+    let timerSeconds = 0;
+    if (gameState) {
+      const now = Date.now();
+      if (now < gameState.readingEndsAt) {
+        phase = 'reading';
+        timerSeconds = Math.ceil((gameState.readingEndsAt - now) / 1000);
+      } else if (now < gameState.answeringEndsAt) {
+        phase = 'answering';
+        timerSeconds = Math.ceil((gameState.answeringEndsAt - now) / 1000);
+      } else {
+        phase = 'judging';
+      }
+    }
+
+    // Get all answers for current question (for judging)
+    let currentAnswers: any[] = [];
+    if (currentTQ) {
+      const answers = await this.prisma.answer.findMany({
+        where: { tournamentId, questionId: currentTQ.questionId },
+        include: {
+          user: { include: { profile: { select: { nickname: true, countryCode: true, flagCode: true } } } },
+          judgement: true,
+        },
+        orderBy: { submittedAt: 'asc' },
+      });
+      currentAnswers = answers.map(a => ({
+        id: a.id,
+        userId: a.userId,
+        nickname: a.user.profile?.nickname || 'Anonymous',
+        countryCode: a.user.profile?.countryCode,
+        flagCode: a.user.profile?.flagCode,
+        answerText: a.answerText,
+        submittedAt: a.submittedAt,
+        judged: !!a.judgement,
+        decision: a.judgement?.decision || null,
+      }));
+    }
+
+    // Spectator stats
+    const spectatorCount = await this.prisma.spectatorAnswer.findMany({
+      where: { tournamentId, questionId: currentTQ?.questionId },
+      distinct: ['userId'],
+    }).then(rows => rows.length);
+
+    return {
+      tournament: {
+        id: tournament.id,
+        title: tournament.title,
+        type: tournament.type,
+        status: tournament.status,
+        startAt: tournament.startAt,
+      },
+      progress: {
+        totalQuestions,
+        currentQuestionNumber,
+        remainingQuestions,
+      },
+      phase,
+      timerSeconds,
+      currentQuestion: currentTQ ? {
+        tqId: currentTQ.id,
+        questionId: currentTQ.questionId,
+        orderIndex: currentTQ.orderIndex,
+        localizations: currentTQ.question.localizations.map(l => ({
+          language: l.language,
+          questionText: l.questionText,
+          correctAnswer: l.correctAnswerLocalized,
+        })),
+      } : null,
+      participants: tournament.participants.map(p => ({
+        id: p.id,
+        userId: p.userId,
+        nickname: p.user.profile?.nickname || 'Anonymous',
+        countryCode: p.user.profile?.countryCode,
+        flagCode: p.user.profile?.flagCode,
+        scoreUser: p.currentScoreUser,
+        scoreSystem: p.currentScoreSystem,
+        matchStatus: p.matchStatus,
+      })),
+      currentAnswers,
+      spectatorCount,
+    };
+  }
+
+
   async leaderboard(tid: string) {
     return this.prisma.tournamentParticipant.findMany({
       where: { tournamentId: tid }, orderBy: [{ currentScoreUser: 'desc' }, { currentScoreSystem: 'asc' }],

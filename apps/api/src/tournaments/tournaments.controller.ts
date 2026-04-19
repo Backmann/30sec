@@ -71,6 +71,9 @@ export class TournamentsController {
   @Post(':id/launch-question')
   launchQuestion(@Param('id') id: string) { return this.tournamentsService.launchNextQuestion(id); }
 
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles('ADMIN', 'SUPERADMIN')
+  @Get(':id/live-state')
+  getLiveState(@Param('id') id: string, @Request() req) { return this.tournamentsService.getLiveState(id, req.user.sub); }
   @UseGuards(JwtAuthGuard)
   @Get(':id/game-state')
   getGameState(@Param('id') id: string, @Request() req) { return this.tournamentsService.getGameState(id, req.user.sub); }
