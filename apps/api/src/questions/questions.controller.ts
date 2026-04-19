@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Put,
+  Delete,
   Param,
   Body,
   Query,
@@ -27,8 +29,18 @@ export class QuestionsController {
   }
 
   @Get()
-  findAll(@Query('status') status?: string) {
-    return this.questionsService.findAll(status);
+  findAll(
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('onlyUnused') onlyUnused?: string,
+    @Query('sort') sort?: 'new' | 'old',
+  ) {
+    return this.questionsService.findAll({
+      status,
+      search,
+      onlyUnused: onlyUnused === 'true',
+      sort,
+    });
   }
 
   @Get(':id')
@@ -37,12 +49,22 @@ export class QuestionsController {
   }
 
   @Post('add-to-tournament')
-  addToTournament(@Body() dto: AddToTournamentDto) {
+  addToTournament(@Body() dto: AddToTournamentDto & { force?: boolean }) {
     return this.questionsService.addToTournament(dto);
   }
 
   @Post('bulk-add-to-tournament')
   bulkAdd(@Body() body: { tournamentId: string; questionIds: string[] }) {
     return this.questionsService.bulkAddToTournament(body.tournamentId, body.questionIds);
+  }
+
+  @Put(':id')
+  update(@Param('id') id: string, @Body() dto: any) {
+    return this.questionsService.update(id, dto);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.questionsService.remove(id);
   }
 }
