@@ -467,6 +467,99 @@ export class TournamentsService {
   }
 
 
+  // ─── Public live state for OBS / stream viewers (no auth, no secrets) ──
+  async getPublicLive(tournamentId: string) {
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        tournamentQuestions: {
+          orderBy: { orderIndex: 'asc' },
+          include: { question: { include: { localizations: true } } },
+        },
+        participants: {
+          where: { matchStatus: { in: ['APPROVED', 'PLAYING', 'WON', 'LOST', 'FINISHED'] } },
+          include: {
+            user: { include: { profile: { select: { nickname: true, countryCode: true, flagCode: true } } } },
+          },
+          orderBy: { currentScoreUser: 'desc' },
+        },
+      },
+    });
+    if (!tournament) throw new NotFoundException('Tournament not found');
+
+    const currentTQ = tournament.tournamentQuestions.filter(tq => tq.isUsed).pop();
+    const totalQuestions = tournament.tournamentQuestions.length;
+    const currentQuestionNumber = tournament.tournamentQuestions.filter(tq => tq.isUsed).length;
+    const remainingQuestions = totalQuestions - currentQuestionNumber;
+
+    const gameState = this.realtime.getGameState(tournamentId);
+    let phase = 'idle';
+    let timerSeconds = 0;
+    if (gameState) {
+      const now = Date.now();
+      if (now < gameState.readingEndsAt) {
+        phase = 'reading';
+        timerSeconds = Math.ceil((gameState.readingEndsAt - now) / 1000);
+      } else if (now < gameState.answeringEndsAt) {
+        phase = 'answering';
+        timerSeconds = Math.ceil((gameState.answeringEndsAt - now) / 1000);
+      } else {
+        phase = 'judging';
+      }
+    }
+
+    // For public: only show answers after they are judged (no spoilers)
+    let currentAnswers: any[] = [];
+    if (currentTQ && phase === 'judging') {
+      const answers = await this.prisma.answer.findMany({
+        where: { tournamentId, questionId: currentTQ.questionId },
+        include: {
+          user: { include: { profile: { select: { nickname: true, flagCode: true } } } },
+          judgement: true,
+        },
+        orderBy: { submittedAt: 'asc' },
+      });
+      currentAnswers = answers
+        .filter(a => a.judgement) // only show ALREADY JUDGED answers
+        .map(a => ({
+          id: a.id,
+          nickname: a.user.profile?.nickname || 'Anonymous',
+          flagCode: a.user.profile?.flagCode || null,
+          answerText: a.answerText,
+          decision: a.judgement?.decision || null,
+        }));
+    }
+
+    return {
+      tournament: {
+        id: tournament.id,
+        title: tournament.title,
+        status: tournament.status,
+        startAt: tournament.startAt,
+      },
+      progress: { totalQuestions, currentQuestionNumber, remainingQuestions },
+      phase,
+      timerSeconds,
+      currentQuestion: currentTQ ? {
+        orderIndex: currentTQ.orderIndex,
+        // NO correct answer for public feed
+        localizations: currentTQ.question.localizations.map(l => ({
+          language: l.language,
+          questionText: l.questionText,
+        })),
+      } : null,
+      participants: tournament.participants.map(p => ({
+        id: p.id,
+        nickname: p.user.profile?.nickname || 'Anonymous',
+        flagCode: p.user.profile?.flagCode || null,
+        scoreUser: p.currentScoreUser,
+        scoreSystem: p.currentScoreSystem,
+        matchStatus: p.matchStatus,
+      })),
+      currentAnswers,
+    };
+  }
+
   async leaderboard(tid: string) {
     return this.prisma.tournamentParticipant.findMany({
       where: { tournamentId: tid }, orderBy: [{ currentScoreUser: 'desc' }, { currentScoreSystem: 'asc' }],

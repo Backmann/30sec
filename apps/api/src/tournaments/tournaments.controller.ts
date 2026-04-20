@@ -4,7 +4,7 @@ import {
 import { TournamentsService } from './tournaments.service';
 import { CreateTournamentDto } from './dto/create-tournament.dto';
 import { UpdateTournamentDto } from './dto/update-tournament.dto';
-import { Throttle } from '@nestjs/throttler';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -71,9 +71,14 @@ export class TournamentsController {
   @Post(':id/launch-question')
   launchQuestion(@Param('id') id: string) { return this.tournamentsService.launchNextQuestion(id); }
 
+  @SkipThrottle()
   @UseGuards(JwtAuthGuard, RolesGuard) @Roles('ADMIN', 'SUPERADMIN')
   @Get(':id/live-state')
   getLiveState(@Param('id') id: string, @Request() req) { return this.tournamentsService.getLiveState(id, req.user.sub); }
+  // Public endpoint for OBS/stream — no auth, no answers leaked
+  @SkipThrottle()
+  @Get(':id/public-live')
+  getPublicLive(@Param('id') id: string) { return this.tournamentsService.getPublicLive(id); }
   @UseGuards(JwtAuthGuard)
   @Get(':id/game-state')
   getGameState(@Param('id') id: string, @Request() req) { return this.tournamentsService.getGameState(id, req.user.sub); }
