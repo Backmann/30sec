@@ -34,12 +34,14 @@ export class QuestionsController {
     @Query('search') search?: string,
     @Query('onlyUnused') onlyUnused?: string,
     @Query('sort') sort?: 'new' | 'old',
+    @Query('location') location?: 'library' | 'archive' | 'all',
   ) {
     return this.questionsService.findAll({
       status,
       search,
       onlyUnused: onlyUnused === 'true',
       sort,
+      location,
     });
   }
 
@@ -56,6 +58,11 @@ export class QuestionsController {
   @Post('bulk-add-to-tournament')
   bulkAdd(@Body() body: { tournamentId: string; questionIds: string[] }) {
     return this.questionsService.bulkAddToTournament(body.tournamentId, body.questionIds);
+  }
+
+  @Delete('tournament-question/:tqId')
+  removeFromTournament(@Param('tqId') tqId: string) {
+    return this.questionsService.removeFromTournament(tqId);
   }
 
   @Put(':id')

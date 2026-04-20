@@ -33,8 +33,8 @@ export class QuestionsService {
   }
 
   // ─── Admin: List all questions ────────────────
-  async findAll(opts: { status?: string; search?: string; onlyUnused?: boolean; sort?: 'new' | 'old' } = {}) {
-    const { status, search, onlyUnused, sort = 'new' } = opts;
+  async findAll(opts: { status?: string; search?: string; onlyUnused?: boolean; sort?: 'new' | 'old'; location?: 'library' | 'archive' | 'all' } = {}) {
+    const { status, search, onlyUnused, sort = 'new', location = 'all' } = opts;
     const where: any = {};
     if (status) where.status = status;
 
@@ -50,8 +50,17 @@ export class QuestionsService {
       };
     }
 
-    // Only unused (not attached to any tournament question)
-    if (onlyUnused) {
+    // Location filter
+    if (location === 'library') {
+      // Free questions: not in any tournament-question link (not attached anywhere)
+      where.tournaments = { none: {} };
+    } else if (location === 'archive') {
+      // Archive: played at least once (isUsed=true somewhere)
+      where.tournaments = { some: { isUsed: true } };
+    }
+
+    // Only unused (legacy flag, same as location=library)
+    if (onlyUnused && location === 'all') {
       where.tournaments = { none: {} };
     }
 
@@ -196,6 +205,24 @@ export class QuestionsService {
       where: { id },
       include: { localizations: true },
     });
+  }
+
+  // ─── Admin: Remove question from tournament (returns to library) ──
+  async removeFromTournament(tournamentQuestionId: string) {
+    const tq = await this.prisma.tournamentQuestion.findUnique({
+      where: { id: tournamentQuestionId },
+      include: { tournament: true },
+    });
+    if (!tq) throw new NotFoundException('Связь вопроса с турниром не найдена');
+    // Don't allow removal from LIVE or FINISHED tournament
+    if (tq.tournament.status === 'LIVE') {
+      throw new NotFoundException('Нельзя убрать вопрос из идущего турнира');
+    }
+    if (tq.isUsed) {
+      throw new NotFoundException('Нельзя убрать сыгранный вопрос из турнира');
+    }
+    await this.prisma.tournamentQuestion.delete({ where: { id: tournamentQuestionId } });
+    return { removed: true };
   }
 
   // ─── Admin: Delete question ───────────────────
