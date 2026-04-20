@@ -35,6 +35,7 @@ export class QuestionsController {
     @Query('onlyUnused') onlyUnused?: string,
     @Query('sort') sort?: 'new' | 'old',
     @Query('location') location?: 'library' | 'archive' | 'all',
+    @Query('tournamentId') tournamentId?: string,
   ) {
     return this.questionsService.findAll({
       status,
@@ -42,7 +43,13 @@ export class QuestionsController {
       onlyUnused: onlyUnused === 'true',
       sort,
       location,
+      tournamentId,
     });
+  }
+
+  @Get('archive/tournaments')
+  archiveTournaments() {
+    return this.questionsService.archiveTournaments();
   }
 
   @Get(':id')
@@ -58,6 +65,16 @@ export class QuestionsController {
   @Post('bulk-add-to-tournament')
   bulkAdd(@Body() body: { tournamentId: string; questionIds: string[] }) {
     return this.questionsService.bulkAddToTournament(body.tournamentId, body.questionIds);
+  }
+
+  @Get(':id/archive-details')
+  archiveDetails(@Param('id') id: string) {
+    return this.questionsService.archiveDetails(id);
+  }
+
+  @Post(':id/return-to-library')
+  returnToLibrary(@Param('id') id: string) {
+    return this.questionsService.returnToLibrary(id);
   }
 
   @Delete('tournament-question/:tqId')

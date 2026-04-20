@@ -33,8 +33,8 @@ export class QuestionsService {
   }
 
   // ─── Admin: List all questions ────────────────
-  async findAll(opts: { status?: string; search?: string; onlyUnused?: boolean; sort?: 'new' | 'old'; location?: 'library' | 'archive' | 'all' } = {}) {
-    const { status, search, onlyUnused, sort = 'new', location = 'all' } = opts;
+  async findAll(opts: { status?: string; search?: string; onlyUnused?: boolean; sort?: 'new' | 'old'; location?: 'library' | 'archive' | 'all'; tournamentId?: string } = {}) {
+    const { status, search, onlyUnused, sort = 'new', location = 'all', tournamentId } = opts;
     const where: any = {};
     if (status) where.status = status;
 
@@ -56,7 +56,7 @@ export class QuestionsService {
       where.tournaments = { none: {} };
     } else if (location === 'archive') {
       // Archive: played at least once (isUsed=true somewhere)
-      where.tournaments = { some: { isUsed: true } };
+      where.tournaments = { some: { isUsed: true, ...(tournamentId ? { tournamentId } : {}) } };
     }
 
     // Only unused (legacy flag, same as location=library)
@@ -205,6 +205,102 @@ export class QuestionsService {
       where: { id },
       include: { localizations: true },
     });
+  }
+
+  // ─── Admin: Get list of tournaments present in archive (for filter) ──
+  async archiveTournaments() {
+    const used = await this.prisma.tournamentQuestion.findMany({
+      where: { isUsed: true },
+      include: {
+        tournament: { select: { id: true, title: true, endAt: true, startAt: true } },
+      },
+      distinct: ['tournamentId'],
+      orderBy: { tournament: { startAt: 'desc' } },
+    });
+    return used.map(u => u.tournament).filter((t, i, arr) => arr.findIndex(x => x.id === t.id) === i);
+  }
+
+  // ─── Admin: Get archive details for a question ────
+  async archiveDetails(questionId: string) {
+    const q = await this.prisma.question.findUnique({
+      where: { id: questionId },
+      include: { localizations: true },
+    });
+    if (!q) throw new NotFoundException('Вопрос не найден');
+
+    // Find all played uses of this question (isUsed=true)
+    const uses = await this.prisma.tournamentQuestion.findMany({
+      where: { questionId, isUsed: true },
+      include: {
+        tournament: {
+          select: { id: true, title: true, startAt: true, endAt: true, status: true },
+        },
+      },
+      orderBy: { tournament: { startAt: 'desc' } },
+    });
+
+    // For each use, fetch answers via (tournamentId, questionId)
+    const history = [] as any[];
+    let totalAnswers = 0;
+    let correctAnswers = 0;
+
+    for (const u of uses) {
+      const answers = (await this.prisma.answer.findMany({
+        where: { tournamentId: u.tournamentId, questionId: u.questionId },
+        include: {
+          user: { select: { id: true, profile: { select: { nickname: true, countryCode: true } } } },
+          judgement: true,
+        },
+        orderBy: { submittedAt: 'asc' },
+      })) as any[];
+
+      totalAnswers += answers.length;
+      correctAnswers += answers.filter(a => a.judgement?.decision === 'ACCEPTED').length;
+
+      const times = answers.map(a => new Date(a.submittedAt).getTime());
+      const firstAnswerTime = times.length ? Math.min(...times) : null;
+
+      history.push({
+        tournamentQuestionId: u.id,
+        tournament: u.tournament,
+        noAnswers: answers.length === 0,
+        answers: answers.map(a => {
+          const at = new Date(a.submittedAt).getTime();
+          const relSeconds = firstAnswerTime ? Math.round((at - firstAnswerTime) / 1000) : 0;
+          return {
+            id: a.id,
+            nickname: a.user?.profile?.nickname || 'Аноним',
+            flagCode: a.user?.profile?.countryCode || null,
+            answerText: a.answerText,
+            submittedAt: a.submittedAt,
+            relSeconds,
+            decision: a.judgement?.decision || null,
+          };
+        }),
+      });
+    }
+
+    const successRate = totalAnswers > 0 ? Math.round((correctAnswers / totalAnswers) * 100) : 0;
+
+    return {
+      question: q,
+      playedTimes: uses.length,
+      totalAnswers,
+      correctAnswers,
+      successRate,
+      history,
+    };
+  }
+
+  // ─── Admin: Return archived question to library (delete all isUsed links) ──
+  async returnToLibrary(questionId: string) {
+    const q = await this.prisma.question.findUnique({ where: { id: questionId } });
+    if (!q) throw new NotFoundException('Вопрос не найден');
+    // Only delete USED links — unused should not be here
+    const result = await this.prisma.tournamentQuestion.deleteMany({
+      where: { questionId, isUsed: true },
+    });
+    return { returned: true, removedLinks: result.count };
   }
 
   // ─── Admin: Remove question from tournament (returns to library) ──
