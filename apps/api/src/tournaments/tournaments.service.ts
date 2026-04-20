@@ -128,6 +128,10 @@ export class TournamentsService {
     const t = await this.prisma.tournament.findUnique({ where: { id } });
     if (!t) throw new NotFoundException('Не найден');
     const u = await this.prisma.tournament.update({ where: { id }, data: { status: 'FINISHED', endAt: new Date() } });
+    // Return unused questions back to library (delete tournament_questions where isUsed=false)
+    await this.prisma.tournamentQuestion.deleteMany({
+      where: { tournamentId: id, isUsed: false },
+    });
 
     // Notify all participants about tournament end
     const participants = await this.prisma.tournamentParticipant.findMany({
