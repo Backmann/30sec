@@ -26,6 +26,7 @@ export class RealtimeService {
     tournamentQuestionId?: string; questionId?: string; orderIndex: number;
     category: string; imageUrl?: string | null;
     localizations: { language: string; questionText: string }[];
+    questionImages?: any[];
   }) {
     // Store current question state for reconnect
     this.gateway.setGameState(tournamentId, {

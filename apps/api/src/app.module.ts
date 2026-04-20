@@ -16,6 +16,7 @@ import { ReactionsModule } from './reactions/reactions.module';
 import { VotesModule } from './votes/votes.module';
 import { AdminModule } from './admin/admin.module';
 import { RealtimeModule } from './realtime/realtime.module';
+import { UploadsModule } from './uploads/uploads.module';
 import { MailModule } from './mail/mail.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { QueueModule } from './queues/queue.module';
@@ -44,6 +45,7 @@ import { QueueModule } from './queues/queue.module';
     ReactionsModule,
     VotesModule,
     AdminModule,
+    UploadsModule,
     RealtimeModule,
     MailModule,
     NotificationsModule,

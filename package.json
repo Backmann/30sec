@@ -1,7 +1,7 @@
 {
   "name": "30sec-api",
   "version": "0.1.0",
-  "description": "30sec. — Intellectual tournament platform API",
+  "description": "30sec. \u2014 Intellectual tournament platform API",
   "author": "Backmann",
   "private": true,
   "license": "UNLICENSED",
@@ -42,7 +42,9 @@
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "@aws-sdk/client-s3": "^3.637.0",
+    "@aws-sdk/s3-request-presigner": "^3.637.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.0",

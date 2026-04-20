@@ -27,8 +27,24 @@ export class QuestionsService {
             correctAnswerLocalized: loc.correctAnswer,
           })),
         },
+        questionImages: dto.questionImages && dto.questionImages.length > 0 ? {
+          create: dto.questionImages.map((img, i) => ({
+            url: img.url,
+            r2Key: img.r2Key,
+            orderIndex: img.orderIndex ?? i,
+            caption: img.caption || null,
+          })),
+        } : undefined,
+        answerImages: dto.answerImages && dto.answerImages.length > 0 ? {
+          create: dto.answerImages.map((img, i) => ({
+            url: img.url,
+            r2Key: img.r2Key,
+            orderIndex: img.orderIndex ?? i,
+            caption: img.caption || null,
+          })),
+        } : undefined,
       },
-      include: { localizations: true },
+      include: { localizations: true, questionImages: true, answerImages: true },
     });
   }
 
@@ -69,6 +85,8 @@ export class QuestionsService {
       orderBy: { createdAt: sort === 'old' ? 'asc' : 'desc' },
       include: {
         localizations: true,
+        questionImages: { orderBy: { orderIndex: 'asc' } },
+        answerImages: { orderBy: { orderIndex: 'asc' } },
         tournaments: {
           select: {
             id: true,
@@ -91,7 +109,11 @@ export class QuestionsService {
   async findOne(id: string) {
     const question = await this.prisma.question.findUnique({
       where: { id },
-      include: { localizations: true },
+      include: {
+        localizations: true,
+        questionImages: { orderBy: { orderIndex: 'asc' } },
+        answerImages: { orderBy: { orderIndex: 'asc' } },
+      },
     });
     if (!question) throw new NotFoundException('Вопрос не найден');
     return question;
@@ -201,9 +223,45 @@ export class QuestionsService {
       });
     }
 
+    // Replace question images
+    if (dto.questionImages !== undefined && Array.isArray(dto.questionImages)) {
+      await this.prisma.questionImage.deleteMany({ where: { questionId: id } });
+      if (dto.questionImages.length > 0) {
+        await this.prisma.questionImage.createMany({
+          data: dto.questionImages.map((img: any, i: number) => ({
+            questionId: id,
+            url: img.url,
+            r2Key: img.r2Key,
+            orderIndex: img.orderIndex ?? i,
+            caption: img.caption || null,
+          })),
+        });
+      }
+    }
+
+    // Replace answer images
+    if (dto.answerImages !== undefined && Array.isArray(dto.answerImages)) {
+      await this.prisma.answerImage.deleteMany({ where: { questionId: id } });
+      if (dto.answerImages.length > 0) {
+        await this.prisma.answerImage.createMany({
+          data: dto.answerImages.map((img: any, i: number) => ({
+            questionId: id,
+            url: img.url,
+            r2Key: img.r2Key,
+            orderIndex: img.orderIndex ?? i,
+            caption: img.caption || null,
+          })),
+        });
+      }
+    }
+
     return this.prisma.question.findUnique({
       where: { id },
-      include: { localizations: true },
+      include: {
+        localizations: true,
+        questionImages: { orderBy: { orderIndex: 'asc' } },
+        answerImages: { orderBy: { orderIndex: 'asc' } },
+      },
     });
   }
 

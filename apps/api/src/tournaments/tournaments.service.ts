@@ -252,7 +252,7 @@ export class TournamentsService {
 
     const next = await this.prisma.tournamentQuestion.findFirst({
       where: { tournamentId, isUsed: false }, orderBy: { orderIndex: 'asc' },
-      include: { question: { include: { localizations: true } } },
+      include: { question: { include: { localizations: true, questionImages: { orderBy: { orderIndex: 'asc' } }, answerImages: { orderBy: { orderIndex: 'asc' } } } } },
     });
     if (!next) throw new BadRequestException('Вопросы закончились');
 
@@ -262,6 +262,7 @@ export class TournamentsService {
       tournamentQuestionId: next.id, questionId: next.question.id, orderIndex: next.orderIndex,
       category: next.question.category, imageUrl: next.question.imageUrl || null,
       localizations: next.question.localizations.map(l => ({ language: l.language, questionText: l.questionText })),
+      questionImages: (next.question as any).questionImages || [],
     });
 
     return { launched: true, orderIndex: next.orderIndex, questionId: next.question.id, tournamentQuestionId: next.id };
@@ -325,7 +326,7 @@ export class TournamentsService {
       include: {
         _count: { select: { participants: true } },
         participants: { include: { user: { include: { profile: { select: { nickname: true } } } } } },
-        tournamentQuestions: { orderBy: { orderIndex: 'asc' }, include: { question: { include: { localizations: true } } } },
+        tournamentQuestions: { orderBy: { orderIndex: 'asc' }, include: { question: { include: { localizations: true, questionImages: { orderBy: { orderIndex: 'asc' } }, answerImages: { orderBy: { orderIndex: 'asc' } } } } } },
       },
     });
     return tournaments.map(t => this.sanitizeQuestions(t, isAdmin));
@@ -338,7 +339,7 @@ export class TournamentsService {
       where: { id },
       include: {
         participants: { include: { user: { include: { profile: { select: { nickname: true, flagCode: true } } } } }, orderBy: { currentScoreUser: 'desc' } },
-        tournamentQuestions: { orderBy: { orderIndex: 'asc' }, include: { question: { include: { localizations: true } } } },
+        tournamentQuestions: { orderBy: { orderIndex: 'asc' }, include: { question: { include: { localizations: true, questionImages: { orderBy: { orderIndex: 'asc' } }, answerImages: { orderBy: { orderIndex: 'asc' } } } } } },
         _count: { select: { participants: true } },
       },
     });
@@ -361,7 +362,7 @@ export class TournamentsService {
       include: {
         tournamentQuestions: {
           orderBy: { orderIndex: 'asc' },
-          include: { question: { include: { localizations: true } } },
+          include: { question: { include: { localizations: true, questionImages: { orderBy: { orderIndex: 'asc' } }, answerImages: { orderBy: { orderIndex: 'asc' } } } } },
         },
         participants: {
           where: { matchStatus: { in: ['APPROVED', 'PLAYING', 'WON', 'LOST', 'FINISHED'] } },
@@ -450,6 +451,8 @@ export class TournamentsService {
           questionText: l.questionText,
           correctAnswer: l.correctAnswerLocalized,
         })),
+        questionImages: (currentTQ.question as any).questionImages || [],
+        answerImages: (currentTQ.question as any).answerImages || [],
       } : null,
       participants: tournament.participants.map(p => ({
         id: p.id,
@@ -474,7 +477,7 @@ export class TournamentsService {
       include: {
         tournamentQuestions: {
           orderBy: { orderIndex: 'asc' },
-          include: { question: { include: { localizations: true } } },
+          include: { question: { include: { localizations: true, questionImages: { orderBy: { orderIndex: 'asc' } }, answerImages: { orderBy: { orderIndex: 'asc' } } } } },
         },
         participants: {
           where: { matchStatus: { in: ['APPROVED', 'PLAYING', 'WON', 'LOST', 'FINISHED'] } },
@@ -547,6 +550,9 @@ export class TournamentsService {
           language: l.language,
           questionText: l.questionText,
         })),
+        questionImages: (currentTQ.question as any).questionImages || [],
+        // Answer images only visible during judging (after reveal)
+        answerImages: phase === 'judging' ? ((currentTQ.question as any).answerImages || []) : [],
       } : null,
       participants: tournament.participants.map(p => ({
         id: p.id,
@@ -570,7 +576,7 @@ export class TournamentsService {
   async getCurrentQuestion(tid: string) {
     return this.prisma.tournamentQuestion.findFirst({
       where: { tournamentId: tid, isUsed: false }, orderBy: { orderIndex: 'asc' },
-      include: { question: { include: { localizations: true } } },
+      include: { question: { include: { localizations: true, questionImages: { orderBy: { orderIndex: 'asc' } }, answerImages: { orderBy: { orderIndex: 'asc' } } } } },
     });
   }
 
@@ -585,7 +591,7 @@ export class TournamentsService {
       include: {
         tournamentQuestions: {
           orderBy: { orderIndex: 'asc' },
-          include: { question: { include: { localizations: true } } },
+          include: { question: { include: { localizations: true, questionImages: { orderBy: { orderIndex: 'asc' } }, answerImages: { orderBy: { orderIndex: 'asc' } } } } },
         },
         participants: { include: { user: { include: { profile: { select: { nickname: true } } } } } },
       },
@@ -654,6 +660,8 @@ export class TournamentsService {
           questionText: l.questionText,
           correctAnswer: canSeeCorrectAnswer ? l.correctAnswerLocalized : undefined,
         })),
+        questionImages: (lastUsed.question as any).questionImages || [],
+        answerImages: canSeeCorrectAnswer ? ((lastUsed.question as any).answerImages || []) : [],
       } : null,
       phase,
       timerSeconds,

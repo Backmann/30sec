@@ -6,6 +6,8 @@ import {
   IsArray,
   ValidateNested,
   ArrayMinSize,
+  ArrayMaxSize,
+  IsInt,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { QuestionCategory } from '@prisma/client';
@@ -13,12 +15,23 @@ import { QuestionCategory } from '@prisma/client';
 export class QuestionLocalizationDto {
   @IsString()
   language: string;
-
   @IsString()
   questionText: string;
-
   @IsString()
   correctAnswer: string;
+}
+
+export class QuestionImageDto {
+  @IsString()
+  url: string;
+  @IsString()
+  r2Key: string;
+  @IsOptional()
+  @IsInt()
+  orderIndex?: number;
+  @IsOptional()
+  @IsString()
+  caption?: string;
 }
 
 export class CreateQuestionDto {
@@ -44,4 +57,18 @@ export class CreateQuestionDto {
   @ValidateNested({ each: true })
   @Type(() => QuestionLocalizationDto)
   localizations: QuestionLocalizationDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10, { message: 'Максимум 10 изображений к вопросу' })
+  @ValidateNested({ each: true })
+  @Type(() => QuestionImageDto)
+  questionImages?: QuestionImageDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10, { message: 'Максимум 10 изображений к ответу' })
+  @ValidateNested({ each: true })
+  @Type(() => QuestionImageDto)
+  answerImages?: QuestionImageDto[];
 }
