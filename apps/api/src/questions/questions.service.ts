@@ -3,12 +3,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { UploadsService } from '../uploads/uploads.service';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { AddToTournamentDto } from './dto/add-to-tournament.dto';
 
 @Injectable()
 export class QuestionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly uploads: UploadsService) {}
 
   // ─── Admin: Create question with localizations ──
   async create(dto: CreateQuestionDto, adminId: string) {
@@ -16,8 +17,6 @@ export class QuestionsService {
       data: {
         category: dto.category,
         theme: dto.theme || null,
-        hasImage: dto.hasImage || false,
-        imageUrl: dto.imageUrl || null,
         status: 'ACTIVE',
         createdBy: adminId,
         localizations: {
@@ -193,8 +192,6 @@ export class QuestionsService {
     const questionData: any = {};
     if (dto.category) questionData.category = dto.category;
     if (dto.theme !== undefined) questionData.theme = dto.theme || null;
-    if (dto.hasImage !== undefined) questionData.hasImage = dto.hasImage;
-    if (dto.imageUrl !== undefined) questionData.imageUrl = dto.imageUrl || null;
 
     // Update or replace localizations
     if (dto.localizations && Array.isArray(dto.localizations)) {
@@ -223,8 +220,12 @@ export class QuestionsService {
       });
     }
 
-    // Replace question images
+    // Replace question images (with R2 cleanup of removed ones)
     if (dto.questionImages !== undefined && Array.isArray(dto.questionImages)) {
+      const newKeys = new Set(dto.questionImages.map((img: any) => img.r2Key));
+      const oldImages = await this.prisma.questionImage.findMany({ where: { questionId: id }, select: { r2Key: true } });
+      const keysToRemove = oldImages.filter(img => !newKeys.has(img.r2Key)).map(img => img.r2Key);
+
       await this.prisma.questionImage.deleteMany({ where: { questionId: id } });
       if (dto.questionImages.length > 0) {
         await this.prisma.questionImage.createMany({
@@ -237,10 +238,17 @@ export class QuestionsService {
           })),
         });
       }
+      for (const key of keysToRemove) {
+        try { await this.uploads.deleteObject(key); } catch (e) { console.error('R2 cleanup fail', key, e); }
+      }
     }
 
-    // Replace answer images
+    // Replace answer images (with R2 cleanup of removed ones)
     if (dto.answerImages !== undefined && Array.isArray(dto.answerImages)) {
+      const newKeys = new Set(dto.answerImages.map((img: any) => img.r2Key));
+      const oldImages = await this.prisma.answerImage.findMany({ where: { questionId: id }, select: { r2Key: true } });
+      const keysToRemove = oldImages.filter(img => !newKeys.has(img.r2Key)).map(img => img.r2Key);
+
       await this.prisma.answerImage.deleteMany({ where: { questionId: id } });
       if (dto.answerImages.length > 0) {
         await this.prisma.answerImage.createMany({
@@ -252,6 +260,9 @@ export class QuestionsService {
             caption: img.caption || null,
           })),
         });
+      }
+      for (const key of keysToRemove) {
+        try { await this.uploads.deleteObject(key); } catch (e) { console.error('R2 cleanup fail', key, e); }
       }
     }
 
@@ -401,10 +412,26 @@ export class QuestionsService {
       );
     }
 
+    // Collect R2 keys for cleanup (before DB cascade deletes images)
+    const qImages = await this.prisma.questionImage.findMany({ where: { questionId: id }, select: { r2Key: true } });
+    const aImages = await this.prisma.answerImage.findMany({ where: { questionId: id }, select: { r2Key: true } });
+    const allKeys = [...qImages, ...aImages].map(i => i.r2Key).filter(Boolean);
+
     // Safe to delete: remove tournamentQuestion links first, then localizations, then question
+    // (question_images and answer_images cascade automatically)
     await this.prisma.tournamentQuestion.deleteMany({ where: { questionId: id } });
     await this.prisma.questionLocalization.deleteMany({ where: { questionId: id } });
     await this.prisma.question.delete({ where: { id } });
-    return { deleted: true };
+
+    // Best-effort cleanup in R2 (don't block on errors)
+    for (const key of allKeys) {
+      try {
+        await this.uploads.deleteObject(key);
+      } catch (e) {
+        console.error('Failed to delete R2 object', key, e);
+      }
+    }
+
+    return { deleted: true, imagesRemoved: allKeys.length };
   }
 }

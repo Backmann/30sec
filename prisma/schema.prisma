@@ -222,8 +222,6 @@ model Question {
   id        String           @id @default(uuid())
   category  QuestionCategory
   theme     String?
-  hasImage  Boolean          @default(false) @map("has_image")
-  imageUrl  String?          @map("image_url")
   status    QuestionStatus   @default(DRAFT)
   createdBy String           @map("created_by")
   createdAt DateTime         @default(now()) @map("created_at")

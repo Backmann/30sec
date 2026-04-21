@@ -260,7 +260,7 @@ export class TournamentsService {
 
     this.realtime.questionStarted(tournamentId, {
       tournamentQuestionId: next.id, questionId: next.question.id, orderIndex: next.orderIndex,
-      category: next.question.category, imageUrl: next.question.imageUrl || null,
+      category: next.question.category,
       localizations: next.question.localizations.map(l => ({ language: l.language, questionText: l.questionText })),
       questionImages: (next.question as any).questionImages || [],
     });

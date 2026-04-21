@@ -2,7 +2,6 @@ import {
   IsString,
   IsOptional,
   IsEnum,
-  IsBoolean,
   IsArray,
   ValidateNested,
   ArrayMinSize,
@@ -43,14 +42,6 @@ export class CreateQuestionDto {
   @IsOptional()
   @IsString()
   theme?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  hasImage?: boolean;
-
-  @IsOptional()
-  @IsString()
-  imageUrl?: string;
 
   @IsArray()
   @ArrayMinSize(1, { message: 'Минимум 1 локализация' })

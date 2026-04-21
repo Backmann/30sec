@@ -24,7 +24,7 @@ export class RealtimeService {
   // Question flow: show question -> 15s reading -> 30s answer -> lock -> auto-reject empty
   questionStarted(tournamentId: string, data: {
     tournamentQuestionId?: string; questionId?: string; orderIndex: number;
-    category: string; imageUrl?: string | null;
+    category: string;
     localizations: { language: string; questionText: string }[];
     questionImages?: any[];
   }) {
