@@ -62,6 +62,12 @@ export class QuestionsController {
     return this.questionsService.addToTournament(dto);
   }
 
+  @Post('auto-fill-tournament')
+  @Roles('ADMIN', 'SUPERADMIN')
+  autoFill(@Body() body: { tournamentId: string; count?: number }) {
+    return this.questionsService.autoFillTournament(body.tournamentId, body.count || 23);
+  }
+
   @Post('bulk-add-to-tournament')
   bulkAdd(@Body() body: { tournamentId: string; questionIds: string[] }) {
     return this.questionsService.bulkAddToTournament(body.tournamentId, body.questionIds);

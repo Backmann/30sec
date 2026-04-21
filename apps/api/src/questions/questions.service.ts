@@ -1,6 +1,7 @@
 import {
   Injectable,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadsService } from '../uploads/uploads.service';
@@ -178,6 +179,38 @@ export class QuestionsService {
       results.push(tq);
     }
     return results;
+  }
+
+  // ─── Admin: Auto-fill tournament with random unused questions ──
+  async autoFillTournament(tournamentId: string, count: number = 23) {
+    const existing = await this.prisma.tournamentQuestion.findMany({
+      where: { tournamentId },
+      select: { questionId: true },
+    });
+    const existingIds = new Set(existing.map(tq => tq.questionId));
+    const needed = count - existing.length;
+    if (needed <= 0) {
+      throw new BadRequestException(`Турнир уже заполнен: ${existing.length}/${count}`);
+    }
+    const candidates = await this.prisma.question.findMany({
+      where: {
+        id: { notIn: Array.from(existingIds) },
+        status: 'ACTIVE',
+        tournaments: {
+          none: {
+            tournament: { status: { in: ['DRAFT', 'SCHEDULED', 'LIVE'] } },
+          },
+        },
+      },
+      select: { id: true },
+    });
+    if (candidates.length < needed) {
+      throw new BadRequestException(`Недостаточно свободных вопросов: нужно ${needed}, доступно ${candidates.length}`);
+    }
+    const shuffled = candidates.sort(() => Math.random() - 0.5);
+    const pickedIds = shuffled.slice(0, needed).map(q => q.id);
+    const added = await this.bulkAddToTournament(tournamentId, pickedIds);
+    return { added: added.length, total: existing.length + added.length };
   }
 
   // ─── Admin: Update question ────────────────────

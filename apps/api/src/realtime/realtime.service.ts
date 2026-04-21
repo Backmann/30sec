@@ -4,10 +4,52 @@ import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class RealtimeService {
+  // Map<tournamentId, { readingTimeout, answerInterval?, data }>
+  private activeTimers = new Map<string, any>();
+
   constructor(
     private readonly gateway: GameGateway,
     private readonly prisma: PrismaService,
   ) {}
+
+  /** Admin: extend reading phase by N seconds (only during reading) */
+  extendReading(tournamentId: string, extraSeconds: number = 10): boolean {
+    const entry = this.activeTimers.get(tournamentId);
+    if (!entry || !entry.readingTimeout) return false;
+    clearTimeout(entry.readingTimeout);
+    const gs = this.gateway.getGameState(tournamentId);
+    if (!gs) return false;
+    const newReadingEnds = gs.readingEndsAt + extraSeconds * 1000;
+    const newAnsweringEnds = gs.answeringEndsAt + extraSeconds * 1000;
+    this.gateway.setGameState(tournamentId, {
+      ...gs,
+      readingEndsAt: newReadingEnds,
+      answeringEndsAt: newAnsweringEnds,
+    });
+    const remainingMs = newReadingEnds - Date.now();
+    this.gateway.emitPhaseChanged(tournamentId, 'reading', Math.ceil(remainingMs / 1000));
+    const data = entry.data;
+    const self = this;
+    entry.readingTimeout = setTimeout(() => {
+      self.gateway.setGamePhase(tournamentId, 'answering');
+      self.gateway.emitPhaseChanged(tournamentId, 'answering', 30);
+      let left = 30;
+      const iv = setInterval(() => {
+        left--;
+        if (left > 0) {
+          self.gateway.emitTimerTick(tournamentId, left, 'answering');
+        } else {
+          self.gateway.emitQuestionLocked(tournamentId);
+          self.gateway.setGamePhase(tournamentId, 'locked');
+          clearInterval(iv);
+          self.autoRejectMissing(tournamentId, data.questionId!);
+          self.activeTimers.delete(tournamentId);
+        }
+      }, 1000);
+      entry.answerInterval = iv;
+    }, remainingMs);
+    return true;
+  }
 
   broadcastTournamentListUpdate() {
     this.gateway.emitGlobal('tournaments_updated', { timestamp: Date.now() });
@@ -44,8 +86,16 @@ export class RealtimeService {
       ...data, phase: 'reading', timerSeconds: 0,
     });
 
-    // After 15s: start answering phase
-    setTimeout(() => {
+    // Clear any previous active timers for this tournament
+    const prev = this.activeTimers.get(tournamentId);
+    if (prev) {
+      if (prev.readingTimeout) clearTimeout(prev.readingTimeout);
+      if (prev.answerInterval) clearInterval(prev.answerInterval);
+    }
+    const entry: any = { data };
+
+    // After 20s (reading phase): start answering phase
+    entry.readingTimeout = setTimeout(() => {
       this.gateway.setGamePhase(tournamentId, 'answering');
       this.gateway.emitPhaseChanged(tournamentId, 'answering', 30);
 
@@ -58,12 +108,14 @@ export class RealtimeService {
           this.gateway.emitQuestionLocked(tournamentId);
           this.gateway.setGamePhase(tournamentId, 'locked');
           clearInterval(iv);
-
-          // Auto-create empty answers for players who didn't respond
           this.autoRejectMissing(tournamentId, data.questionId!);
+          this.activeTimers.delete(tournamentId);
         }
       }, 1000);
+      entry.answerInterval = iv;
     }, 20000);
+
+    this.activeTimers.set(tournamentId, entry);
   }
 
   // Auto-create empty answers and auto-reject for missing players (OPTIMIZED)

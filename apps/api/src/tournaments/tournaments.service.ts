@@ -574,6 +574,11 @@ export class TournamentsService {
     });
   }
 
+  /** Extends reading phase by N seconds. Returns true if extended, false if not in reading phase */
+  extendReading(tournamentId: string, seconds: number = 10): boolean {
+    return this.realtime.extendReading(tournamentId, seconds);
+  }
+
   async getCurrentQuestion(tid: string) {
     return this.prisma.tournamentQuestion.findFirst({
       where: { tournamentId: tid, isUsed: false }, orderBy: { orderIndex: 'asc' },

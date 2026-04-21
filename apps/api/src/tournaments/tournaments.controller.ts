@@ -71,6 +71,13 @@ export class TournamentsController {
   @Post(':id/launch-question')
   launchQuestion(@Param('id') id: string) { return this.tournamentsService.launchNextQuestion(id); }
 
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles('ADMIN', 'SUPERADMIN')
+  @Post(':id/extend-reading')
+  extendReading(@Param('id') id: string) {
+    const ok = this.tournamentsService.extendReading(id, 10);
+    return { extended: ok, seconds: 10 };
+  }
+
   @SkipThrottle()
   @UseGuards(JwtAuthGuard, RolesGuard) @Roles('ADMIN', 'SUPERADMIN')
   @Get(':id/live-state')
