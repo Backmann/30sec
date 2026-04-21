@@ -544,6 +544,7 @@ export class TournamentsService {
       phase,
       timerSeconds,
       currentQuestion: currentTQ ? {
+        questionId: currentTQ.questionId,
         orderIndex: currentTQ.orderIndex,
         // NO correct answer for public feed
         localizations: currentTQ.question.localizations.map(l => ({

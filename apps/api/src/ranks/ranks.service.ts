@@ -15,7 +15,10 @@ export class RanksService {
   // ─── Global leaderboard (top players) ─────────
   async globalLeaderboard(limit: number = 50) {
     const stats = await this.prisma.playerStat.findMany({
-      where: { totalAnswered: { gt: 0 } },
+      where: {
+        totalAnswered: { gt: 0 },
+        user: { role: 'USER' },
+      },
       orderBy: [
         { totalCorrect: 'desc' },
         { accuracyPercent: 'desc' },
@@ -61,7 +64,10 @@ export class RanksService {
   // ─── Leaderboard by accuracy ──────────────────
   async accuracyLeaderboard(minAnswers: number = 10, limit: number = 50) {
     const stats = await this.prisma.playerStat.findMany({
-      where: { totalAnswered: { gte: minAnswers } },
+      where: {
+        totalAnswered: { gte: minAnswers },
+        user: { role: 'USER' },
+      },
       orderBy: [
         { accuracyPercent: 'desc' },
         { totalCorrect: 'desc' },
