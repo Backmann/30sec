@@ -1,37 +1,28 @@
-import {
-  Controller,
-  Post,
-  Get,
-  Param,
-  Body,
-  UseGuards,
-  Request,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards, Request } from '@nestjs/common';
 import { VotesService } from './votes.service';
-import { CastVoteDto } from './dto/cast-vote.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
 @Controller('votes')
 export class VotesController {
-  constructor(private readonly votesService: VotesService) {}
+  constructor(private readonly votes: VotesService) {}
 
-  // Public: vote results
+  // Public: view results
   @Get('results/:tournamentId')
   getResults(@Param('tournamentId') tournamentId: string) {
-    return this.votesService.getResults(tournamentId);
+    return this.votes.getResults(tournamentId);
   }
 
-  // Authorized: cast vote
+  // Authorized: cast or toggle vote
   @UseGuards(JwtAuthGuard)
   @Post()
-  castVote(@Body() dto: CastVoteDto, @Request() req) {
-    return this.votesService.castVote(dto, req.user.sub);
+  cast(@Body() dto: { tournamentId: string; questionId: string }, @Request() req) {
+    return this.votes.castVote(req.user.sub, dto.tournamentId, dto.questionId);
   }
 
-  // Authorized: check if already voted
+  // Authorized: get my vote
   @UseGuards(JwtAuthGuard)
   @Get('my-vote/:tournamentId')
-  hasVoted(@Param('tournamentId') tournamentId: string, @Request() req) {
-    return this.votesService.hasVoted(tournamentId, req.user.sub);
+  myVote(@Param('tournamentId') tournamentId: string, @Request() req) {
+    return this.votes.getMyVote(req.user.sub, tournamentId);
   }
 }

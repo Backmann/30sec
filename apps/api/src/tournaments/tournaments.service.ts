@@ -133,16 +133,16 @@ export class TournamentsService {
       where: { tournamentId: id, isUsed: false },
     });
 
-    // Notify all participants about tournament end
+    // Notify all participants about tournament end + invite to vote
     const participants = await this.prisma.tournamentParticipant.findMany({
-      where: { tournamentId: id, matchStatus: { in: ['PLAYING', 'WON', 'LOST'] } },
+      where: { tournamentId: id, matchStatus: { in: ['PLAYING', 'WON', 'LOST', 'FINISHED'] } },
       select: { userId: true },
     });
     for (const p of participants) {
       await this.notifyUser(
         p.userId,
         'Турнир завершён 🏆',
-        `Турнир "${u.title}" завершён. Посмотрите свои результаты и позицию в таблице!`,
+        `Турнир "${u.title}" завершён. У вас 48 часов, чтобы проголосовать за лучший вопрос! ⭐`,
       );
     }
 

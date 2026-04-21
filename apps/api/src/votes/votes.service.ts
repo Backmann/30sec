@@ -1,104 +1,134 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CastVoteDto } from './dto/cast-vote.dto';
 
 @Injectable()
 export class VotesService {
+  // Voting window after tournament end (hours)
+  private readonly VOTING_WINDOW_HOURS = 48;
+
   constructor(private readonly prisma: PrismaService) {}
 
-  // ─── Cast vote for best question ──────────────
-  async castVote(dto: CastVoteDto, userId: string) {
-    // Tournament must be FINISHED
+  // Cast or change vote
+  async castVote(userId: string, tournamentId: string, questionId: string) {
     const tournament = await this.prisma.tournament.findUnique({
-      where: { id: dto.tournamentId },
+      where: { id: tournamentId },
+      select: { id: true, status: true, endAt: true },
     });
     if (!tournament) throw new NotFoundException('Турнир не найден');
     if (tournament.status !== 'FINISHED') {
       throw new BadRequestException('Голосование доступно только после завершения турнира');
     }
-
-    // User must be a participant
-    const participant = await this.prisma.tournamentParticipant.findUnique({
-      where: {
-        userId_tournamentId: { userId, tournamentId: dto.tournamentId },
-      },
-    });
-    if (!participant) {
-      throw new ForbiddenException('Голосовать могут только участники турнира');
+    if (tournament.endAt) {
+      const hoursSinceEnd = (Date.now() - new Date(tournament.endAt).getTime()) / (1000 * 60 * 60);
+      if (hoursSinceEnd > this.VOTING_WINDOW_HOURS) {
+        throw new BadRequestException(`Голосование закрыто (прошло ${Math.floor(hoursSinceEnd)}ч)`);
+      }
     }
 
-    // Check not already voted
-    const existing = await this.prisma.questionVote.findUnique({
-      where: {
-        tournamentId_voterUserId: {
-          tournamentId: dto.tournamentId,
-          voterUserId: userId,
-        },
-      },
-    });
-    if (existing) throw new BadRequestException('Вы уже проголосовали в этом турнире');
-
-    // Question must be in this tournament
+    // Verify question was in this tournament and was played
     const tq = await this.prisma.tournamentQuestion.findFirst({
-      where: {
-        tournamentId: dto.tournamentId,
-        questionId: dto.questionId,
-      },
+      where: { tournamentId, questionId, isUsed: true },
     });
-    if (!tq) throw new BadRequestException('Этот вопрос не из данного турнира');
+    if (!tq) throw new BadRequestException('Этот вопрос не был сыгран в турнире');
 
-    return this.prisma.questionVote.create({
-      data: {
-        tournamentId: dto.tournamentId,
-        voterUserId: userId,
-        questionId: dto.questionId,
-      },
+    // Upsert
+    const existing = await this.prisma.questionVote.findUnique({
+      where: { tournamentId_voterUserId: { tournamentId, voterUserId: userId } },
     });
+    if (existing) {
+      if (existing.questionId === questionId) {
+        // Same vote — toggle off (remove)
+        await this.prisma.questionVote.delete({ where: { id: existing.id } });
+        return { voted: false };
+      }
+      await this.prisma.questionVote.update({
+        where: { id: existing.id },
+        data: { questionId },
+      });
+    } else {
+      await this.prisma.questionVote.create({
+        data: { tournamentId, voterUserId: userId, questionId },
+      });
+    }
+    return { voted: true, questionId };
   }
 
-  // ─── Get vote results for tournament ──────────
+  // Get aggregated results for a tournament
   async getResults(tournamentId: string) {
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { status: true, endAt: true, title: true },
+    });
+    if (!tournament) throw new NotFoundException('Турнир не найден');
+
+    // All played questions with vote counts + creator info
+    const tqs = await this.prisma.tournamentQuestion.findMany({
+      where: { tournamentId, isUsed: true },
+      include: {
+        question: {
+          include: {
+            localizations: true,
+            questionImages: { orderBy: { orderIndex: 'asc' } },
+            creator: { include: { profile: { select: { nickname: true, flagCode: true } } } },
+          },
+        },
+      },
+      orderBy: { orderIndex: 'asc' },
+    });
+
     const votes = await this.prisma.questionVote.groupBy({
       by: ['questionId'],
       where: { tournamentId },
       _count: { questionId: true },
-      orderBy: { _count: { questionId: 'desc' } },
     });
+    const voteMap = new Map<string, number>();
+    for (const v of votes) voteMap.set(v.questionId, v._count.questionId);
 
-    // Enrich with question data
-    const results = [];
-    for (const v of votes) {
-      const question = await this.prisma.question.findUnique({
-        where: { id: v.questionId },
-        include: { localizations: { select: { language: true, questionText: true } } },
-      });
-      results.push({
-        questionId: v.questionId,
-        votes: v._count.questionId,
-        question: question
-          ? {
-              category: question.category,
-              localizations: question.localizations,
-            }
-          : null,
-      });
+    const totalVotes = Array.from(voteMap.values()).reduce((a, b) => a + b, 0);
+
+    // Voting window state
+    let votingOpen = false;
+    let hoursLeft = 0;
+    if (tournament.status === 'FINISHED' && tournament.endAt) {
+      const hoursSinceEnd = (Date.now() - new Date(tournament.endAt).getTime()) / (1000 * 60 * 60);
+      if (hoursSinceEnd < this.VOTING_WINDOW_HOURS) {
+        votingOpen = true;
+        hoursLeft = Math.ceil(this.VOTING_WINDOW_HOURS - hoursSinceEnd);
+      }
     }
 
-    return results;
+    const items = tqs.map((tq: any) => ({
+      questionId: tq.questionId,
+      orderIndex: tq.orderIndex,
+      localizations: tq.question.localizations.map((l: any) => ({
+        language: l.language,
+        questionText: l.questionText,
+        correctAnswer: l.correctAnswerLocalized,
+      })),
+      questionImages: tq.question.questionImages || [],
+      creator: tq.question.creator
+        ? { id: tq.question.creator.id, nickname: tq.question.creator.profile?.nickname, flagCode: tq.question.creator.profile?.flagCode }
+        : null,
+      votes: voteMap.get(tq.questionId) || 0,
+    }));
+
+    // Sort by votes desc
+    items.sort((a: any, b: any) => b.votes - a.votes);
+
+    return {
+      tournamentTitle: tournament.title,
+      votingOpen,
+      hoursLeft,
+      totalVotes,
+      items,
+    };
   }
 
-  // ─── Check if user already voted ──────────────
-  async hasVoted(tournamentId: string, userId: string) {
-    const vote = await this.prisma.questionVote.findUnique({
-      where: {
-        tournamentId_voterUserId: { tournamentId, voterUserId: userId },
-      },
+  // What did the user vote for
+  async getMyVote(userId: string, tournamentId: string) {
+    const v = await this.prisma.questionVote.findUnique({
+      where: { tournamentId_voterUserId: { tournamentId, voterUserId: userId } },
     });
-    return { hasVoted: !!vote, questionId: vote?.questionId || null };
+    return { questionId: v?.questionId || null };
   }
 }
