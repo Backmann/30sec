@@ -692,9 +692,10 @@ export class TournamentsService {
       );
     }
 
-    // Leader of voting (top question)
-    const leaderQuestion = [...questionsStats].sort((a, b) => b.votes - a.votes)[0];
-    const votingLeader = leaderQuestion && leaderQuestion.votes > 0 ? leaderQuestion : null;
+    // Voting winners — all questions tied for first place (could be 1 or many)
+    const sortedByVotes = [...questionsStats].sort((a, b) => b.votes - a.votes);
+    const topVotes = sortedByVotes[0]?.votes || 0;
+    const votingWinners = topVotes > 0 ? sortedByVotes.filter(q => q.votes === topVotes) : [];
 
     // Participants sorted by score
     const participants = tournament.participants
@@ -744,7 +745,8 @@ export class TournamentsService {
         open: votingOpen,
         hoursLeft,
         totalVotes,
-        leader: votingLeader,
+        winners: votingWinners,
+        topVotes,
       },
       participants,
       questions: questionsStats,
