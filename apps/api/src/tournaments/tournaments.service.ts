@@ -579,6 +579,178 @@ export class TournamentsService {
     return this.realtime.extendReading(tournamentId, seconds);
   }
 
+  /** Rich summary for admin post-match dashboard (FINISHED tournaments). Also works for LIVE/DRAFT. */
+  async getAdminSummary(tournamentId: string) {
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        tournamentQuestions: {
+          orderBy: { orderIndex: 'asc' },
+          include: {
+            question: {
+              include: {
+                localizations: true,
+                questionImages: { orderBy: { orderIndex: 'asc' } },
+                answerImages: { orderBy: { orderIndex: 'asc' } },
+                creator: { include: { profile: { select: { nickname: true, flagCode: true } } } },
+              },
+            },
+          },
+        },
+        participants: {
+          include: {
+            user: { include: { profile: { select: { nickname: true, flagCode: true, countryCode: true } } } },
+          },
+        },
+      },
+    });
+    if (!tournament) throw new NotFoundException('Турнир не найден');
+
+    // All answers for this tournament
+    const allAnswers = await this.prisma.answer.findMany({
+      where: { tournamentId },
+      include: {
+        user: { include: { profile: { select: { nickname: true, flagCode: true } } } },
+        judgement: true,
+      },
+    });
+
+    // Vote counts per question
+    const voteGroups = await this.prisma.questionVote.groupBy({
+      by: ['questionId'],
+      where: { tournamentId },
+      _count: { questionId: true },
+    });
+    const voteMap = new Map<string, number>();
+    for (const v of voteGroups) voteMap.set(v.questionId, v._count.questionId);
+    const totalVotes = Array.from(voteMap.values()).reduce((a, b) => a + b, 0);
+
+    // Voting window state
+    let votingOpen = false;
+    let hoursLeft = 0;
+    if (tournament.status === 'FINISHED' && tournament.endAt) {
+      const hoursSinceEnd = (Date.now() - new Date(tournament.endAt).getTime()) / (1000 * 60 * 60);
+      if (hoursSinceEnd < 48) {
+        votingOpen = true;
+        hoursLeft = Math.ceil(48 - hoursSinceEnd);
+      }
+    }
+
+    const playedQuestions = tournament.tournamentQuestions.filter((tq: any) => tq.isUsed);
+    const totalQuestions = tournament.tournamentQuestions.length;
+
+    // Build per-question stats
+    const questionsStats = playedQuestions.map((tq: any) => {
+      const qAnswers = allAnswers.filter(a => a.questionId === tq.questionId);
+      const accepted = qAnswers.filter(a => a.judgement?.decision === 'ACCEPTED');
+      const rejected = qAnswers.filter(a => a.judgement?.decision === 'REJECTED');
+      const noAnswer = tournament.participants.filter((p: any) =>
+        ['PLAYING', 'WON', 'LOST', 'FINISHED'].includes(p.matchStatus) &&
+        !qAnswers.some(a => a.userId === p.userId),
+      );
+      return {
+        questionId: tq.questionId,
+        orderIndex: tq.orderIndex,
+        localizations: tq.question.localizations.map((l: any) => ({
+          language: l.language,
+          questionText: l.questionText,
+          correctAnswer: l.correctAnswerLocalized,
+        })),
+        questionImages: tq.question.questionImages || [],
+        answerImages: tq.question.answerImages || [],
+        creator: tq.question.creator
+          ? { nickname: tq.question.creator.profile?.nickname, flagCode: tq.question.creator.profile?.flagCode }
+          : null,
+        accepted: accepted.map(a => ({
+          nickname: a.user.profile?.nickname,
+          flagCode: a.user.profile?.flagCode,
+          answerText: a.answerText,
+        })),
+        rejected: rejected.map(a => ({
+          nickname: a.user.profile?.nickname,
+          flagCode: a.user.profile?.flagCode,
+          answerText: a.answerText,
+        })),
+        noAnswer: noAnswer.map((p: any) => ({
+          nickname: p.user.profile?.nickname,
+          flagCode: p.user.profile?.flagCode,
+        })),
+        votes: voteMap.get(tq.questionId) || 0,
+      };
+    });
+
+    // Tournament-wide stats
+    const totalAnswerAttempts = allAnswers.length;
+    const totalCorrect = allAnswers.filter(a => a.judgement?.decision === 'ACCEPTED').length;
+    const accuracyPercent = totalAnswerAttempts > 0 ? Math.round((totalCorrect / totalAnswerAttempts) * 100) : 0;
+
+    // Duration
+    let durationMinutes: number | null = null;
+    if (tournament.endAt && tournament.startAt) {
+      durationMinutes = Math.round(
+        (new Date(tournament.endAt).getTime() - new Date(tournament.startAt).getTime()) / 60000,
+      );
+    }
+
+    // Leader of voting (top question)
+    const leaderQuestion = [...questionsStats].sort((a, b) => b.votes - a.votes)[0];
+    const votingLeader = leaderQuestion && leaderQuestion.votes > 0 ? leaderQuestion : null;
+
+    // Participants sorted by score
+    const participants = tournament.participants
+      .filter((p: any) => ['APPROVED', 'PLAYING', 'WON', 'LOST', 'FINISHED'].includes(p.matchStatus))
+      .map((p: any) => {
+        const myAnswers = allAnswers.filter(a => a.userId === p.userId);
+        const myCorrect = myAnswers.filter(a => a.judgement?.decision === 'ACCEPTED').length;
+        const myAttempts = myAnswers.length;
+        return {
+          id: p.id,
+          userId: p.userId,
+          nickname: p.user.profile?.nickname,
+          flagCode: p.user.profile?.flagCode,
+          countryCode: p.user.profile?.countryCode,
+          scoreUser: p.currentScoreUser,
+          scoreSystem: p.currentScoreSystem,
+          matchStatus: p.matchStatus,
+          answersGiven: myAttempts,
+          answersCorrect: myCorrect,
+          accuracyPercent: myAttempts > 0 ? Math.round((myCorrect / myAttempts) * 100) : 0,
+        };
+      })
+      .sort((a: any, b: any) => b.scoreUser - a.scoreUser);
+
+    const winner = participants.find((p: any) => p.matchStatus === 'WON') || null;
+    const wasDecisive = participants.some((p: any) => p.scoreUser >= 11 && p.scoreSystem >= 11);
+
+    return {
+      id: tournament.id,
+      title: tournament.title,
+      status: tournament.status,
+      startAt: tournament.startAt,
+      endAt: tournament.endAt,
+      durationMinutes,
+      type: tournament.type,
+      winner,
+      wasDecisive,
+      stats: {
+        questionsPlayed: playedQuestions.length,
+        questionsTotal: totalQuestions,
+        participantsCount: participants.length,
+        totalAnswerAttempts,
+        totalCorrect,
+        accuracyPercent,
+      },
+      voting: {
+        open: votingOpen,
+        hoursLeft,
+        totalVotes,
+        leader: votingLeader,
+      },
+      participants,
+      questions: questionsStats,
+    };
+  }
+
   async getCurrentQuestion(tid: string) {
     return this.prisma.tournamentQuestion.findFirst({
       where: { tournamentId: tid, isUsed: false }, orderBy: { orderIndex: 'asc' },

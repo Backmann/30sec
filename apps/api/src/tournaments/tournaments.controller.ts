@@ -78,6 +78,12 @@ export class TournamentsController {
     return { extended: ok, seconds: 10 };
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles('ADMIN', 'SUPERADMIN')
+  @Get(':id/admin-summary')
+  adminSummary(@Param('id') id: string) {
+    return this.tournamentsService.getAdminSummary(id);
+  }
+
   @SkipThrottle()
   @UseGuards(JwtAuthGuard, RolesGuard) @Roles('ADMIN', 'SUPERADMIN')
   @Get(':id/live-state')
