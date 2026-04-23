@@ -27,7 +27,7 @@ jobs:
             docker ps -a --filter "name=30sec-api" --format "{{.Names}}" | xargs -r docker rm -f || true
 
             echo "-> Rebuilding and starting API container..."
-            docker compose up -d --build api
+            docker compose up -d --build --force-recreate --no-deps api
 
             echo "-> Waiting for health check (up to 60s)..."
             for i in 1 2 3 4 5 6; do
@@ -35,7 +35,8 @@ jobs:
               STATUS=$(docker inspect --format="{{.State.Health.Status}}" 30sec-api 2>/dev/null || echo "missing")
               echo "   [attempt $i/6] status: $STATUS"
               if [ "$STATUS" = "healthy" ]; then
-                echo "OK: API is healthy!"
+                echo "OK: API is healthy! Reloading nginx..."
+                docker restart 30sec-nginx && sleep 3
                 exit 0
               fi
             done
