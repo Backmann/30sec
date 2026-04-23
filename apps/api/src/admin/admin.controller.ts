@@ -58,4 +58,14 @@ export class AdminController {
   changeUserRole(@Param('id') id: string, @Body() body: { role: string }) {
     return this.adminService.changeUserRole(id, body.role);
   }
+
+  @Get('players')
+  getPlayers(@Query('search') search?: string, @Query('status') status?: any, @Query('sort') sort?: string) {
+    return this.adminService.getPlayers({ search, status, sort });
+  }
+
+  @Get('players/:id')
+  getPlayerDetails(@Param('id') id: string) {
+    return this.adminService.getPlayerDetails(id);
+  }
 }

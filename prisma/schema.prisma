@@ -88,6 +88,7 @@ model User {
   spectatorAnswers   SpectatorAnswer[]
   questionReactions  QuestionReaction[]
   questionVotes      QuestionVote[]
+  sessions           UserSession[]
   notifications      Notification[]
   adminLogs          AdminLog[]
   createdQuestions   Question[]              @relation("QuestionCreator")
@@ -446,4 +447,30 @@ model AdminLog {
   @@index([actionType])
   @@index([entityType])
   @@map("admin_logs")
+}
+
+model UserSession {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  ipAddress       String?   @map("ip_address")
+  userAgent       String?   @map("user_agent")
+  deviceType      String?   @map("device_type")
+  osName          String?   @map("os_name")
+  browserName     String?   @map("browser_name")
+  countryCode     String?   @map("country_code")
+  countryName     String?   @map("country_name")
+  city            String?
+  region          String?
+  latitude        Float?
+  longitude       Float?
+  timezone        String?
+  startedAt       DateTime  @default(now()) @map("started_at")
+  lastSeenAt      DateTime  @default(now()) @map("last_seen_at")
+  durationSeconds Int       @default(0) @map("duration_seconds")
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, lastSeenAt(sort: Desc)])
+  @@index([lastSeenAt(sort: Desc)])
+  @@map("user_sessions")
 }

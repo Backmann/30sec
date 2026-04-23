@@ -14,6 +14,7 @@ import { RanksModule } from './ranks/ranks.module';
 import { SpectatorsModule } from './spectators/spectators.module';
 import { ReactionsModule } from './reactions/reactions.module';
 import { VotesModule } from './votes/votes.module';
+import { TrackingModule } from './tracking/tracking.module';
 import { AdminModule } from './admin/admin.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { UploadsModule } from './uploads/uploads.module';
@@ -44,6 +45,7 @@ import { QueueModule } from './queues/queue.module';
     SpectatorsModule,
     ReactionsModule,
     VotesModule,
+    TrackingModule,
     AdminModule,
     UploadsModule,
     RealtimeModule,
