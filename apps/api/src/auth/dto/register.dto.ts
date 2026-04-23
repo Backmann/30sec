@@ -1,5 +1,4 @@
-import { IsEmail, IsString, MinLength, MaxLength, IsOptional, Matches } from 'class-validator';
-
+import { IsEmail, IsString, MinLength, MaxLength, IsOptional, Matches, IsBoolean, Equals } from 'class-validator';
 export class RegisterDto {
   @IsEmail({}, { message: 'Некорректный email' })
   email: string;
@@ -8,16 +7,6 @@ export class RegisterDto {
   @MinLength(8, { message: 'Пароль минимум 8 символов' })
   @MaxLength(64)
   password: string;
-
-  @IsString()
-  @MinLength(1, { message: 'Введите имя' })
-  @MaxLength(50)
-  firstName: string;
-
-  @IsString()
-  @MinLength(1, { message: 'Введите фамилию' })
-  @MaxLength(50)
-  lastName: string;
 
   @IsString()
   @MinLength(3, { message: 'Псевдоним минимум 3 символа' })
@@ -29,6 +18,16 @@ export class RegisterDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(50)
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  lastName?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(5)
   language?: string;
 
@@ -36,4 +35,17 @@ export class RegisterDto {
   @IsString()
   @MaxLength(2)
   countryCode?: string;
+
+  // GDPR — must be true
+  @IsBoolean({ message: 'Примите условия использования' })
+  @Equals(true, { message: 'Примите условия использования' })
+  acceptTerms: boolean;
+
+  @IsBoolean({ message: 'Примите политику конфиденциальности' })
+  @Equals(true, { message: 'Примите политику конфиденциальности' })
+  acceptPrivacy: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  marketingConsent?: boolean;
 }

@@ -1,5 +1,4 @@
-import { IsString, IsOptional, IsBoolean, MaxLength, MinLength, Matches } from 'class-validator';
-
+import { IsString, IsOptional, IsBoolean, MaxLength, MinLength, Matches, IsDateString, IsIn, IsUrl } from 'class-validator';
 export class UpdateProfileDto {
   @IsOptional()
   @IsString()
@@ -36,4 +35,33 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(20)
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  avatarUrl?: string;
+
+  @IsOptional()
+  @IsDateString({}, { message: 'Некорректная дата рождения' })
+  dateOfBirth?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['male', 'female', 'other', 'unspecified'], { message: 'Неверное значение пола' })
+  gender?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  bio?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  timezone?: string;
 }

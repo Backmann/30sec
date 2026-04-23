@@ -72,6 +72,12 @@ export class ProfilesService {
       flagCode: dto.countryCode?.toLowerCase() ?? undefined,
       showRealName: dto.showRealName ?? undefined,
       phone: dto.phone ?? undefined,
+      avatarUrl: dto.avatarUrl ?? undefined,
+      dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+      gender: dto.gender ?? undefined,
+      city: dto.city ?? undefined,
+      bio: dto.bio ?? undefined,
+      timezone: dto.timezone ?? undefined,
     };
 
     // Nickname change logic

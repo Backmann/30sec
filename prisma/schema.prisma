@@ -72,7 +72,10 @@ model User {
   passwordHash    String?   @map("password_hash")
   googleId        String?   @unique @map("google_id")
   role            UserRole  @default(USER)
-  emailVerifiedAt DateTime? @map("email_verified_at")
+  emailVerifiedAt   DateTime? @map("email_verified_at")
+  privacyAcceptedAt DateTime? @map("privacy_accepted_at")
+  termsAcceptedAt   DateTime? @map("terms_accepted_at")
+  marketingConsent  Boolean   @default(false) @map("marketing_consent")
   isActive        Boolean   @default(true) @map("is_active")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
@@ -100,8 +103,8 @@ model User {
 model Profile {
   id             String    @id @default(uuid())
   userId         String    @unique @map("user_id")
-  firstName      String    @map("first_name")
-  lastName       String    @map("last_name")
+  firstName      String?   @map("first_name")
+  lastName       String?   @map("last_name")
   nickname       String    @unique
   nicknameLocked Boolean   @default(true) @map("nickname_locked")
   nicknameChangedAt DateTime? @map("nickname_changed_at")
@@ -111,6 +114,12 @@ model Profile {
   flagCode       String?   @map("flag_code")
   language       String
   showRealName   Boolean   @default(false) @map("show_real_name")
+  avatarUrl      String?   @map("avatar_url")
+  dateOfBirth    DateTime? @db.Date @map("date_of_birth")
+  gender         String?
+  city           String?
+  bio            String?
+  timezone       String?
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 

@@ -45,15 +45,19 @@ export class AuthService {
     // Hash password
     const passwordHash = await argon2.hash(dto.password);
 
+    const now = new Date();
     // Create user + profile + playerStats in transaction
     const user = await this.prisma.user.create({
       data: {
         email: dto.email.toLowerCase(),
         passwordHash,
+        privacyAcceptedAt: now,
+        termsAcceptedAt: now,
+        marketingConsent: dto.marketingConsent || false,
         profile: {
           create: {
-            firstName: dto.firstName,
-            lastName: dto.lastName,
+            firstName: dto.firstName || null,
+            lastName: dto.lastName || null,
             nickname: dto.nickname,
             language: dto.language || 'ru',
             countryCode: dto.countryCode || null,
