@@ -204,13 +204,37 @@ export class QuestionsService {
       },
       select: { id: true },
     });
-    if (candidates.length < needed) {
-      throw new BadRequestException(`Недостаточно свободных вопросов: нужно ${needed}, доступно ${candidates.length}`);
+    if (candidates.length === 0) {
+      throw new BadRequestException('В библиотеке нет свободных вопросов для заполнения');
     }
+    // Add as many as we can (up to needed)
+    const toAdd = Math.min(needed, candidates.length);
     const shuffled = candidates.sort(() => Math.random() - 0.5);
-    const pickedIds = shuffled.slice(0, needed).map(q => q.id);
+    const pickedIds = shuffled.slice(0, toAdd).map(q => q.id);
     const added = await this.bulkAddToTournament(tournamentId, pickedIds);
-    return { added: added.length, total: existing.length + added.length };
+    const total = existing.length + added.length;
+    const stillNeeded = count - total;
+    return {
+      added: added.length,
+      total,
+      target: count,
+      stillNeeded: stillNeeded > 0 ? stillNeeded : 0,
+      partial: stillNeeded > 0,
+    };
+  }
+
+  // Get count of free questions in library (available for any tournament)
+  async countFreeQuestions() {
+    return this.prisma.question.count({
+      where: {
+        status: 'ACTIVE',
+        tournaments: {
+          none: {
+            tournament: { status: { in: ['DRAFT', 'SCHEDULED', 'LIVE'] } },
+          },
+        },
+      },
+    });
   }
 
   // ─── Admin: Update question ────────────────────
@@ -421,6 +445,38 @@ export class QuestionsService {
     }
     await this.prisma.tournamentQuestion.delete({ where: { id: tournamentQuestionId } });
     return { removed: true };
+  }
+
+  // ─── Admin: Reorder questions in tournament ─────
+  async reorderInTournament(tournamentId: string, orderedTqIds: string[]) {
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { status: true },
+    });
+    if (!tournament) throw new NotFoundException("Турнир не найден");
+    if (tournament.status === "LIVE" || tournament.status === "FINISHED") {
+      throw new NotFoundException("Нельзя менять порядок в идущем или завершённом турнире");
+    }
+    const existing = await this.prisma.tournamentQuestion.findMany({
+      where: { tournamentId, isUsed: false },
+      select: { id: true },
+    });
+    const existingIds = new Set(existing.map(e => e.id));
+    for (const id of orderedTqIds) {
+      if (!existingIds.has(id)) {
+        throw new NotFoundException("Некоторые вопросы не относятся к этому турниру");
+      }
+    }
+    await this.prisma.$transaction(async (tx) => {
+      const SAFE = 10000;
+      for (let i = 0; i < orderedTqIds.length; i++) {
+        await tx.tournamentQuestion.update({ where: { id: orderedTqIds[i] }, data: { orderIndex: SAFE + i } });
+      }
+      for (let i = 0; i < orderedTqIds.length; i++) {
+        await tx.tournamentQuestion.update({ where: { id: orderedTqIds[i] }, data: { orderIndex: i } });
+      }
+    });
+    return { reordered: true, count: orderedTqIds.length };
   }
 
   // ─── Admin: Delete question ───────────────────

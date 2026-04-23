@@ -83,11 +83,20 @@ export class QuestionsController {
     return this.questionsService.returnToLibrary(id);
   }
 
+  @Get("free-count")
+  freeCount() {
+    return this.questionsService.countFreeQuestions().then(count => ({ count }));
+  }
+
   @Delete('tournament-question/:tqId')
   removeFromTournament(@Param('tqId') tqId: string) {
     return this.questionsService.removeFromTournament(tqId);
   }
 
+  @Post("reorder-in-tournament")
+  reorderInTournament(@Body() dto: { tournamentId: string; orderedTqIds: string[] }) {
+    return this.questionsService.reorderInTournament(dto.tournamentId, dto.orderedTqIds);
+  }
   @Put(':id')
   update(@Param('id') id: string, @Body() dto: any) {
     return this.questionsService.update(id, dto);
