@@ -28,7 +28,7 @@ export class UploadsService {
 
   // Generate presigned PUT URL — client uploads directly to R2
   async getPresignedUploadUrl(params: {
-    category: 'question' | 'answer';
+    category: 'question' | 'answer' | 'avatar';
     contentType: string;
     contentLength?: number;
   }) {
