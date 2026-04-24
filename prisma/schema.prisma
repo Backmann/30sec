@@ -92,6 +92,7 @@ model User {
   questionReactions  QuestionReaction[]
   questionVotes      QuestionVote[]
   sessions           UserSession[]
+  achievements       UserAchievement[]
   notifications      Notification[]
   adminLogs          AdminLog[]
   createdQuestions   Question[]              @relation("QuestionCreator")
@@ -485,4 +486,33 @@ model UserSession {
   @@index([userId, lastSeenAt(sort: Desc)])
   @@index([lastSeenAt(sort: Desc)])
   @@map("user_sessions")
+}
+
+model Achievement {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  title       String
+  description String
+  icon        String
+  category    String
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  userAchievements UserAchievement[]
+
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  achievementId String   @map("achievement_id")
+  unlockedAt    DateTime @default(now()) @map("unlocked_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId, unlockedAt(sort: Desc)])
+  @@map("user_achievements")
 }

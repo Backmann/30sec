@@ -4,17 +4,20 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AchievementsService } from '../achievements/achievements.service';
 import { UploadsService } from '../uploads/uploads.service';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { AddToTournamentDto } from './dto/add-to-tournament.dto';
 
 @Injectable()
 export class QuestionsService {
-  constructor(private readonly prisma: PrismaService, private readonly uploads: UploadsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly uploads: UploadsService,
+    private readonly achievements: AchievementsService,
+  ) {}
 
   // ─── Admin: Create question with localizations ──
   async create(dto: CreateQuestionDto, adminId: string) {
-    return this.prisma.question.create({
+    const result = await this.prisma.question.create({
       data: {
         category: dto.category,
         theme: dto.theme || null,
@@ -46,6 +49,8 @@ export class QuestionsService {
       },
       include: { localizations: true, questionImages: true, answerImages: true },
     });
+    this.achievements.onQuestionCreated(adminId).catch(() => {});
+    return result;
   }
 
   // ─── Admin: List all questions ────────────────

@@ -1,12 +1,16 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AchievementsService } from '../achievements/achievements.service';
 
 @Injectable()
 export class VotesService {
   // Voting window after tournament end (hours)
   private readonly VOTING_WINDOW_HOURS = 48;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly achievements: AchievementsService,
+  ) {}
 
   // Cast or change vote
   async castVote(userId: string, tournamentId: string, questionId: string) {
@@ -50,6 +54,7 @@ export class VotesService {
         data: { tournamentId, voterUserId: userId, questionId },
       });
     }
+    this.achievements.onFirstVote(userId).catch(() => {});
     return { voted: true, questionId };
   }
 

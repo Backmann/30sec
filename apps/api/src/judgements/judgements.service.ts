@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AchievementsService } from '../achievements/achievements.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { QueueService } from '../queues/queue.service';
@@ -19,6 +20,7 @@ export class JudgementsService {
     private readonly realtime: RealtimeService,
     private readonly notifications: NotificationsService,
     private readonly queue: QueueService,
+    private readonly achievements: AchievementsService,
   ) {}
 
   // ─── Admin: Judge an answer ───────────────────
