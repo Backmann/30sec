@@ -64,4 +64,16 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(64)
   timezone?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  showCity?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  showAge?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  showCountry?: boolean;
 }

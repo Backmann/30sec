@@ -114,6 +114,9 @@ model Profile {
   flagCode       String?   @map("flag_code")
   language       String
   showRealName   Boolean   @default(false) @map("show_real_name")
+  showCity       Boolean   @default(true) @map("show_city")
+  showAge        Boolean   @default(false) @map("show_age")
+  showCountry    Boolean   @default(true) @map("show_country")
   avatarUrl      String?   @map("avatar_url")
   dateOfBirth    DateTime? @db.Date @map("date_of_birth")
   gender         String?

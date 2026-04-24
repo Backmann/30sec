@@ -78,6 +78,9 @@ export class ProfilesService {
       city: dto.city ?? undefined,
       bio: dto.bio ?? undefined,
       timezone: dto.timezone ?? undefined,
+      showCity: dto.showCity ?? undefined,
+      showAge: dto.showAge ?? undefined,
+      showCountry: dto.showCountry ?? undefined,
     };
 
     // Nickname change logic
@@ -186,36 +189,74 @@ export class ProfilesService {
       },
     });
     if (!profile) throw new NotFoundException('Игрок не найден');
+    if (!profile.user.isActive) throw new NotFoundException('Игрок не найден');
+    if (profile.user.role !== 'USER' && profile.user.role !== 'ADMIN' && profile.user.role !== 'SUPERADMIN') {
+      throw new NotFoundException('Игрок не найден');
+    }
+
+    const userId = profile.user.id;
+
+    // Aggregated game stats
+    const [wins, losses, finished, totalAnswers, correctAnswers] = await Promise.all([
+      this.prisma.tournamentParticipant.count({ where: { userId, matchStatus: 'WON' } }),
+      this.prisma.tournamentParticipant.count({ where: { userId, matchStatus: 'LOST' } }),
+      this.prisma.tournamentParticipant.count({ where: { userId, matchStatus: 'FINISHED' } }),
+      this.prisma.answer.count({ where: { userId } }),
+      this.prisma.answer.count({ where: { userId, judgement: { decision: 'ACCEPTED' } } }),
+    ]);
+
+    // Recent played tournaments
+    const recent = await this.prisma.tournamentParticipant.findMany({
+      where: { userId, matchStatus: { in: ['WON', 'LOST', 'FINISHED'] } },
+      include: {
+        tournament: { select: { id: true, title: true, endAt: true } },
+      },
+      orderBy: { joinedAt: 'desc' },
+      take: 5,
+    });
 
     const stats = profile.user.playerStats;
+    const shouldShowName = profile.showRealName;
+
+    // Calculate age if date_of_birth set and show_age=true
+    let age: number | null = null;
+    if (profile.showAge && profile.dateOfBirth) {
+      const dob = new Date(profile.dateOfBirth);
+      const now = new Date();
+      age = now.getFullYear() - dob.getFullYear();
+      const m = now.getMonth() - dob.getMonth();
+      if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--;
+    }
 
     return {
       nickname: profile.nickname,
-      countryCode: profile.countryCode,
-      flagCode: profile.flagCode,
-      firstName: profile.showRealName ? profile.firstName : null,
-      lastName: profile.showRealName ? profile.lastName : null,
+      avatarUrl: profile.avatarUrl,
+      bio: profile.bio,
+      city: profile.showCity ? profile.city : null,
+      countryCode: profile.showCountry ? profile.countryCode : null,
+      flagCode: profile.showCountry ? profile.flagCode : null,
+      age,
+      firstName: shouldShowName ? profile.firstName : null,
+      lastName: shouldShowName ? profile.lastName : null,
       memberSince: profile.createdAt,
-      stats: stats
-        ? {
-            totalAnswered: stats.totalAnswered,
-            totalCorrect: stats.totalCorrect,
-            accuracyPercent: stats.accuracyPercent,
-            bestStreak: stats.bestStreak,
-            weeklyFinals: stats.weeklyFinals,
-            monthlyFinals: stats.monthlyFinals,
-            seasonFinals: stats.seasonFinals,
-            yearlyFinals: stats.yearlyFinals,
-            wins12_0: stats.wins12_0,
-            rank: stats.rank
-              ? {
-                  code: stats.rank.code,
-                  title: stats.rank.title,
-                  icon: stats.rank.icon,
-                }
-              : null,
-          }
-        : null,
+      rank: stats?.rank ? { code: stats.rank.code, title: stats.rank.title, icon: stats.rank.icon } : null,
+      stats: {
+        wins, losses, finished,
+        winRate: (wins + losses) > 0 ? Math.round((wins / (wins + losses)) * 100) : 0,
+        tournamentsPlayed: wins + losses + finished,
+        answersTotal: totalAnswers,
+        answersCorrect: correctAnswers,
+        accuracy: totalAnswers > 0 ? Math.round((correctAnswers / totalAnswers) * 100) : 0,
+        bestStreak: stats?.bestStreak || 0,
+      },
+      recentTournaments: recent.map((p: any) => ({
+        id: p.tournament.id,
+        title: p.tournament.title,
+        endAt: p.tournament.endAt,
+        scoreUser: p.currentScoreUser,
+        scoreSystem: p.currentScoreSystem,
+        matchStatus: p.matchStatus,
+      })),
     };
   }
   // GDPR: Export all user data
@@ -274,5 +315,6 @@ export class ProfilesService {
     });
     return { success: true, message: 'Account successfully deleted. Your tournament history is anonymized but preserved for data integrity.' };
   }
+
 
 }
