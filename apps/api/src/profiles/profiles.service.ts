@@ -218,6 +218,32 @@ export class ProfilesService {
     const stats = profile.user.playerStats;
     const shouldShowName = profile.showRealName;
 
+    // Next rank progress
+    let rankProgress: { current: any; next: any; toNext: number; progressPct: number } | null = null;
+    if (stats) {
+      const allRanks = await this.prisma.rank.findMany({ orderBy: { thresholdCorrectAnswers: 'asc' } });
+      const currentRank = stats.rank;
+      const currentThreshold = currentRank?.thresholdCorrectAnswers || 0;
+      const nextRank = allRanks.find((r: any) => r.thresholdCorrectAnswers > stats.totalCorrect) || null;
+      if (nextRank) {
+        const range = nextRank.thresholdCorrectAnswers - currentThreshold;
+        const done = stats.totalCorrect - currentThreshold;
+        rankProgress = {
+          current: currentRank ? { code: currentRank.code, title: currentRank.title, icon: currentRank.icon } : null,
+          next: { code: nextRank.code, title: nextRank.title, icon: nextRank.icon, threshold: nextRank.thresholdCorrectAnswers },
+          toNext: nextRank.thresholdCorrectAnswers - stats.totalCorrect,
+          progressPct: range > 0 ? Math.min(100, Math.round((done / range) * 100)) : 0,
+        };
+      } else {
+        rankProgress = {
+          current: currentRank ? { code: currentRank.code, title: currentRank.title, icon: currentRank.icon } : null,
+          next: null,
+          toNext: 0,
+          progressPct: 100,
+        };
+      }
+    }
+
     // Calculate age if date_of_birth set and show_age=true
     let age: number | null = null;
     if (profile.showAge && profile.dateOfBirth) {
@@ -240,7 +266,9 @@ export class ProfilesService {
       lastName: shouldShowName ? profile.lastName : null,
       memberSince: profile.createdAt,
       rank: stats?.rank ? { code: stats.rank.code, title: stats.rank.title, icon: stats.rank.icon } : null,
+      rankProgress,
       stats: {
+        totalCorrect: stats?.totalCorrect || 0,
         wins, losses, finished,
         winRate: (wins + losses) > 0 ? Math.round((wins / (wins + losses)) * 100) : 0,
         tournamentsPlayed: wins + losses + finished,
@@ -317,4 +345,69 @@ export class ProfilesService {
   }
 
 
+
+  // ─── Activity heatmap + weekly stats ──────────
+  async getActivityData(nickname: string) {
+    const profile = await this.prisma.profile.findUnique({
+      where: { nickname },
+      select: { userId: true },
+    });
+    if (!profile) throw new NotFoundException('Игрок не найден');
+    const userId = profile.userId;
+
+    // Last 365 days
+    const since = new Date();
+    since.setDate(since.getDate() - 365);
+
+    // Answers per day
+    const answers = await this.prisma.answer.findMany({
+      where: { userId, createdAt: { gte: since } },
+      select: { createdAt: true, judgement: { select: { decision: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Group by date (YYYY-MM-DD)
+    const daily = new Map<string, { total: number; correct: number }>();
+    for (const a of answers) {
+      const day = a.createdAt.toISOString().split('T')[0];
+      if (!daily.has(day)) daily.set(day, { total: 0, correct: 0 });
+      const d = daily.get(day)!;
+      d.total++;
+      if (a.judgement?.decision === 'ACCEPTED') d.correct++;
+    }
+
+    // Build heatmap (365 days array)
+    const heatmap: { date: string; total: number; correct: number }[] = [];
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(since);
+      d.setDate(d.getDate() + i);
+      const key = d.toISOString().split('T')[0];
+      heatmap.push({ date: key, total: daily.get(key)?.total || 0, correct: daily.get(key)?.correct || 0 });
+    }
+
+    // Weekly rollup (last 12 weeks)
+    const weekly: { weekStart: string; total: number; correct: number; accuracy: number }[] = [];
+    const now = new Date();
+    for (let w = 11; w >= 0; w--) {
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - (w * 7 + 6));
+      weekStart.setHours(0, 0, 0, 0);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 7);
+      let total = 0, correct = 0;
+      for (const a of answers) {
+        if (a.createdAt >= weekStart && a.createdAt < weekEnd) {
+          total++;
+          if (a.judgement?.decision === 'ACCEPTED') correct++;
+        }
+      }
+      weekly.push({
+        weekStart: weekStart.toISOString().split('T')[0],
+        total, correct,
+        accuracy: total > 0 ? Math.round((correct / total) * 100) : 0,
+      });
+    }
+
+    return { heatmap, weekly };
+  }
 }

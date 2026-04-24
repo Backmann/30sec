@@ -67,6 +67,10 @@ export class ProfilesController {
   getPublicProfile(@Param('nickname') nickname: string) {
     return this.profilesService.getPublicProfile(nickname);
   }
+  @Get('players/:nickname/activity')
+  getActivityData(@Param('nickname') nickname: string) {
+    return this.profilesService.getActivityData(nickname);
+  }
   // GDPR: Export all my data as JSON file
   @UseGuards(JwtAuthGuard)
   @Get('me/gdpr/export')
