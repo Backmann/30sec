@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post, UseGuards, Request } from '@nestjs/common';
 import { VotesService } from './votes.service';
+import { EmailVerifiedGuard } from '../common/guards/email-verified.guard';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
 @Controller('votes')
@@ -13,7 +14,7 @@ export class VotesController {
   }
 
   // Authorized: cast or toggle vote
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, EmailVerifiedGuard)
   @Post()
   cast(@Body() dto: { tournamentId: string; questionId: string }, @Request() req) {
     return this.votes.castVote(req.user.sub, dto.tournamentId, dto.questionId);

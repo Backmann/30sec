@@ -5,6 +5,7 @@ import { TournamentsService } from './tournaments.service';
 import { CreateTournamentDto } from './dto/create-tournament.dto';
 import { UpdateTournamentDto } from './dto/update-tournament.dto';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
+import { EmailVerifiedGuard } from '../common/guards/email-verified.guard';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -26,7 +27,7 @@ export class TournamentsController {
 
   // Player: apply to join
   @Throttle({ default: { limit: 10, ttl: 60000 } })
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, EmailVerifiedGuard)
   @Post(':id/join')
   join(@Param('id') id: string, @Request() req) { return this.tournamentsService.join(id, req.user.sub); }
 
