@@ -1,22 +1,17 @@
-import { Controller, Get } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { Controller, Get, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
+import { HealthService } from './health.service';
 
-@Controller('health')
+@Controller('admin/health')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN', 'SUPERADMIN')
 export class HealthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly health: HealthService) {}
 
   @Get()
-  async check() {
-    const dbOk = await this.prisma.$queryRaw`SELECT 1`
-      .then(() => true)
-      .catch(() => false);
-
-    return {
-      status: dbOk ? 'ok' : 'degraded',
-      timestamp: new Date().toISOString(),
-      services: {
-        database: dbOk ? 'connected' : 'disconnected',
-      },
-    };
+  get() {
+    return this.health.getSystemHealth();
   }
 }

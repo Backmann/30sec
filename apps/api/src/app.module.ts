@@ -3,7 +3,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
-import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { TournamentsModule } from './tournaments/tournaments.module';
 import { QuestionsModule } from './questions/questions.module';
@@ -17,6 +16,7 @@ import { VotesModule } from './votes/votes.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { AchievementsModule } from './achievements/achievements.module';
 import { FeedbackModule } from './feedback/feedback.module';
+import { HealthModule } from './health/health.module';
 import { AdminModule } from './admin/admin.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { UploadsModule } from './uploads/uploads.module';
@@ -36,7 +36,6 @@ import { QueueModule } from './queues/queue.module';
       }]),
     }),
     PrismaModule,
-    HealthModule,
     AuthModule,
     TournamentsModule,
     QuestionsModule,
@@ -50,6 +49,7 @@ import { QueueModule } from './queues/queue.module';
     TrackingModule,
     AchievementsModule,
     FeedbackModule,
+    HealthModule,
     AdminModule,
     UploadsModule,
     RealtimeModule,
