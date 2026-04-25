@@ -16,6 +16,7 @@ import { ReactionsModule } from './reactions/reactions.module';
 import { VotesModule } from './votes/votes.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { AchievementsModule } from './achievements/achievements.module';
+import { FeedbackModule } from './feedback/feedback.module';
 import { AdminModule } from './admin/admin.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { UploadsModule } from './uploads/uploads.module';
@@ -48,6 +49,7 @@ import { QueueModule } from './queues/queue.module';
     VotesModule,
     TrackingModule,
     AchievementsModule,
+    FeedbackModule,
     AdminModule,
     UploadsModule,
     RealtimeModule,

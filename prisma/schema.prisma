@@ -93,6 +93,7 @@ model User {
   questionVotes      QuestionVote[]
   sessions           UserSession[]
   achievements       UserAchievement[]
+  feedback           Feedback[]
   notifications      Notification[]
   adminLogs          AdminLog[]
   createdQuestions   Question[]              @relation("QuestionCreator")
@@ -515,4 +516,26 @@ model UserAchievement {
   @@unique([userId, achievementId])
   @@index([userId, unlockedAt(sort: Desc)])
   @@map("user_achievements")
+}
+
+model Feedback {
+  id          String   @id @default(uuid())
+  userId      String?  @map("user_id")
+  category    String   // 'bug' | 'suggestion' | 'question' | 'other'
+  subject     String
+  message     String
+  email       String?
+  url         String?
+  userAgent   String?  @map("user_agent")
+  ipAddress   String?  @map("ip_address")
+  status      String   @default("new")
+  adminNotes  String?  @map("admin_notes")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([userId])
+  @@map("feedback")
 }
