@@ -17,7 +17,6 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { TournamentRequestsService } from './tournament-requests.service';
 import {
-  AdminListQueryDto,
   CreateTournamentRequestDto,
   FulfillRequestsDto,
 } from './tournament-requests.dto';
@@ -80,13 +79,14 @@ export class TournamentRequestsController {
   @Roles('ADMIN', 'SUPERADMIN')
   @Get('admin/list')
   adminList(
-    @Query() filter: AdminListQueryDto,
+    @Query('language') language?: string,
+    @Query('status') status?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
     return this.svc.adminList({
-      language: filter.language,
-      status: filter.status,
+      language,
+      status,
       limit: limit ? parseInt(limit, 10) : undefined,
       offset: offset ? parseInt(offset, 10) : undefined,
     });
