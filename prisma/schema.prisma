@@ -97,6 +97,7 @@ model User {
   notifications      Notification[]
   adminLogs          AdminLog[]
   createdQuestions   Question[]              @relation("QuestionCreator")
+  tournamentRequests TournamentRequest[]
 
   @@index([role, isActive])
   @@map("users")
@@ -208,6 +209,7 @@ model Tournament {
   spectatorAnswers    SpectatorAnswer[]
   questionReactions   QuestionReaction[]
   questionVotes       QuestionVote[]
+  fulfilledRequests   TournamentRequest[]     @relation("FulfilledRequests")
 
   @@index([status])
   @@index([startAt])
@@ -538,4 +540,26 @@ model Feedback {
   @@index([status, createdAt(sort: Desc)])
   @@index([userId])
   @@map("feedback")
+}
+
+model TournamentRequest {
+  id                       String    @id @default(uuid())
+  userId                   String    @map("user_id")
+  language                 String    @db.VarChar(5)
+  preferredDays            String[]  @default([]) @map("preferred_days")
+  preferredTimeSlot        String?   @map("preferred_time_slot")
+  themes                   String[]  @default([])
+  comment                  String?
+  status                   String    @default("active")
+  fulfilledByTournamentId  String?   @map("fulfilled_by_tournament_id")
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
+  expiresAt                DateTime  @map("expires_at")
+
+  user                     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fulfilledByTournament    Tournament? @relation("FulfilledRequests", fields: [fulfilledByTournamentId], references: [id], onDelete: SetNull)
+
+  @@index([language, status])
+  @@index([userId])
+  @@map("tournament_requests")
 }

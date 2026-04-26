@@ -12,3 +12,4 @@ yarn-error.log*
 .prisma/
 .htpasswd
 *.tar.gz
+prisma/schema.prisma.backup-*
