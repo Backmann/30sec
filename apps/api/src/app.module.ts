@@ -23,6 +23,7 @@ import { UploadsModule } from './uploads/uploads.module';
 import { MailModule } from './mail/mail.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { QueueModule } from './queues/queue.module';
+import { TournamentRequestsModule } from './tournament-requests/tournament-requests.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { QueueModule } from './queues/queue.module';
     MailModule,
     NotificationsModule,
     QueueModule,
+    TournamentRequestsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
