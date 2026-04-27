@@ -485,6 +485,164 @@ export class QuestionsService {
   }
 
   // ─── Admin: Delete question ───────────────────
+  /**
+   * Library overview for admin dashboard.
+   *
+   * Returns supply data (questions per language, in library and free for next tournament)
+   * and demand data (active queue requests per language). The admin can see at a glance
+   * which languages have a content gap.
+   *
+   * Conventions:
+   * - "in library" = ACTIVE questions with a localization in that language
+   * - "free" = ACTIVE + not currently bound to a DRAFT/SCHEDULED/LIVE tournament
+   * - "tournaments possible" = floor(free / 23)
+   * - "missing translations" = questions ACTIVE in `referenceLang` but missing a localization in `targetLang`
+   */
+  async libraryOverview(referenceLang: string = 'ru') {
+    const QUESTIONS_PER_TOURNAMENT = 23;
+    const LANGUAGES = ['ru', 'en', 'de', 'uk', 'fr', 'es', 'it', 'pl'];
+
+    // 1) All active questions with their localization languages and tournament bindings
+    const activeQuestions = await this.prisma.question.findMany({
+      where: { status: 'ACTIVE' },
+      select: {
+        id: true,
+        category: true,
+        theme: true,
+        createdAt: true,
+        localizations: { select: { language: true } },
+        tournaments: {
+          select: { tournament: { select: { status: true } } },
+        },
+      },
+    });
+
+    // 2) Counts by language
+    const inLibByLang: Record<string, number> = {};
+    const freeByLang: Record<string, number> = {};
+
+    for (const q of activeQuestions) {
+      const isFree = !q.tournaments.some(tq =>
+        ['DRAFT', 'SCHEDULED', 'LIVE'].includes(tq.tournament.status),
+      );
+      const langSet = new Set(q.localizations.map(l => l.language));
+      for (const lang of langSet) {
+        inLibByLang[lang] = (inLibByLang[lang] || 0) + 1;
+        if (isFree) freeByLang[lang] = (freeByLang[lang] || 0) + 1;
+      }
+    }
+
+    // 3) Demand from queue (active tournament_requests per language)
+    const queueGrouped = await this.prisma.tournamentRequest.groupBy({
+      by: ['language'],
+      where: { status: 'active' },
+      _count: { _all: true },
+    });
+    const demandByLang: Record<string, number> = {};
+    for (const g of queueGrouped) demandByLang[g.language] = g._count._all;
+
+    // 4) Build per-language report
+    const byLanguage = LANGUAGES.map(lang => {
+      const inLib = inLibByLang[lang] || 0;
+      const free = freeByLang[lang] || 0;
+      const demand = demandByLang[lang] || 0;
+      const tournamentsPossible = Math.floor(free / QUESTIONS_PER_TOURNAMENT);
+      const needForOneTournament = Math.max(0, QUESTIONS_PER_TOURNAMENT - free);
+
+      // Status: red = critical (demand exists, no tournaments possible)
+      //         amber = ok for one tournament but tight
+      //         green = comfortable (>=2 tournaments)
+      let health: 'red' | 'amber' | 'green' | 'idle';
+      if (demand === 0 && inLib === 0) {
+        health = 'idle'; // nobody asks, nothing exists
+      } else if (tournamentsPossible === 0) {
+        health = 'red';
+      } else if (tournamentsPossible === 1) {
+        health = 'amber';
+      } else {
+        health = 'green';
+      }
+
+      return {
+        language: lang,
+        inLibrary: inLib,
+        free,
+        demand,
+        tournamentsPossible,
+        needForOneTournament,
+        health,
+      };
+    });
+
+    // 5) Missing translations vs reference language
+    // For each ACTIVE question that has the reference localization but NOT the target localization.
+    const missingTranslations: Record<string, { questionId: string; referenceText: string }[]> = {};
+    for (const lang of LANGUAGES) {
+      if (lang === referenceLang) continue;
+      missingTranslations[lang] = [];
+    }
+
+    for (const q of activeQuestions) {
+      const langSet = new Set(q.localizations.map(l => l.language));
+      if (!langSet.has(referenceLang)) continue;
+      for (const lang of LANGUAGES) {
+        if (lang === referenceLang) continue;
+        if (!langSet.has(lang)) {
+          if (missingTranslations[lang].length < 50) {
+            missingTranslations[lang].push({ questionId: q.id, referenceText: '' });
+          }
+        }
+      }
+    }
+
+    // Hydrate the reference text for the truncated lists (max 50 per language)
+    const allMissingIds = new Set<string>();
+    for (const ids of Object.values(missingTranslations)) {
+      for (const it of ids) allMissingIds.add(it.questionId);
+    }
+    if (allMissingIds.size > 0) {
+      const refLocs = await this.prisma.questionLocalization.findMany({
+        where: {
+          questionId: { in: Array.from(allMissingIds) },
+          language: referenceLang,
+        },
+        select: { questionId: true, questionText: true },
+      });
+      const textById = new Map(refLocs.map(l => [l.questionId, l.questionText]));
+      for (const lang of Object.keys(missingTranslations)) {
+        for (const it of missingTranslations[lang]) {
+          it.referenceText = textById.get(it.questionId) || '';
+        }
+      }
+    }
+
+    // 6) Totals (status counts and used vs free)
+    const [statusCounts, totalActive, totalFree] = await Promise.all([
+      this.prisma.question.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+      }),
+      this.prisma.question.count({ where: { status: 'ACTIVE' } }),
+      this.countFreeQuestions(),
+    ]);
+
+    return {
+      meta: {
+        questionsPerTournament: QUESTIONS_PER_TOURNAMENT,
+        referenceLanguage: referenceLang,
+        languages: LANGUAGES,
+      },
+      totals: {
+        active: totalActive,
+        free: totalFree,
+        used: totalActive - totalFree,
+        byStatus: Object.fromEntries(statusCounts.map(s => [s.status, s._count._all])),
+      },
+      byLanguage,
+      missingTranslations,
+    };
+  }
+
   async remove(id: string) {
     const question = await this.prisma.question.findUnique({
       where: { id },

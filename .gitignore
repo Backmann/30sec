@@ -14,3 +14,4 @@ yarn-error.log*
 *.tar.gz
 prisma/schema.prisma.backup-*
 apps/api/src/app.module.ts.backup-*
+*.backup-*

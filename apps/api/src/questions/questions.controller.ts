@@ -52,6 +52,11 @@ export class QuestionsController {
     return this.questionsService.archiveTournaments();
   }
 
+  @Get('library-overview')
+  libraryOverview(@Query('referenceLang') referenceLang?: string) {
+    return this.questionsService.libraryOverview(referenceLang || 'ru');
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.questionsService.findOne(id);
