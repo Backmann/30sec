@@ -84,6 +84,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // Game state management
   setGameState(tournamentId: string, state: any) { this.gameStates.set(tournamentId, state); }
+  clearGameState(tournamentId: string) { this.gameStates.delete(tournamentId); }
   setGamePhase(tournamentId: string, phase: string) {
     const s = this.gameStates.get(tournamentId);
     if (s) { s.phase = phase; this.gameStates.set(tournamentId, s); }

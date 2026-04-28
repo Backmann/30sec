@@ -60,6 +60,16 @@ export class RealtimeService {
   }
 
   tournamentFinished(tournamentId: string) {
+    // Stop any in-flight timers (reading/answering) — otherwise they keep
+    // emitting tick events to a tournament that's no longer running.
+    const entry = this.activeTimers.get(tournamentId);
+    if (entry) {
+      if (entry.readingTimeout) clearTimeout(entry.readingTimeout);
+      if (entry.answerInterval) clearInterval(entry.answerInterval);
+      this.activeTimers.delete(tournamentId);
+    }
+    // Clear the cached game state so reconnects don't see stale question data.
+    this.gateway.clearGameState(tournamentId);
     this.gateway.emitTournamentFinished(tournamentId);
   }
 

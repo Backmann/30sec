@@ -57,6 +57,13 @@ export class QuestionsController {
     return this.questionsService.libraryOverview(referenceLang || 'ru');
   }
 
+  // NOTE: any literal-path GET MUST come before @Get(':id') — otherwise
+  // 'free-count' is captured as the :id param and Prisma throws 404/500.
+  @Get('free-count')
+  freeCount() {
+    return this.questionsService.countFreeQuestions().then(count => ({ count }));
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.questionsService.findOne(id);
@@ -86,11 +93,6 @@ export class QuestionsController {
   @Post(':id/return-to-library')
   returnToLibrary(@Param('id') id: string) {
     return this.questionsService.returnToLibrary(id);
-  }
-
-  @Get("free-count")
-  freeCount() {
-    return this.questionsService.countFreeQuestions().then(count => ({ count }));
   }
 
   @Delete('tournament-question/:tqId')
