@@ -8,6 +8,6 @@ import { PrismaModule } from '../prisma/prisma.module';
 @Module({
   imports: [PrismaModule, JwtModule.register({}), ConfigModule],
   providers: [GameGateway, RealtimeService],
-  exports: [RealtimeService],
+  exports: [RealtimeService, GameGateway],
 })
 export class RealtimeModule {}

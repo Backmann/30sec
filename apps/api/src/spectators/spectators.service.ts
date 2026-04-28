@@ -4,11 +4,15 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { GameGateway } from '../realtime/game.gateway';
 import { SaveSpectatorAnswerDto } from './dto/save-spectator-answer.dto';
 
 @Injectable()
 export class SpectatorsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gameGateway: GameGateway,
+  ) {}
 
   // ─── Save personal answer (spectator) ─────────
   async saveAnswer(dto: SaveSpectatorAnswerDto, userId: string) {
@@ -81,24 +85,40 @@ export class SpectatorsService {
     });
     if (!tournament) throw new NotFoundException('Турнир не найден');
 
-    // Get current question (without correct answer!)
-    const currentQuestion = await this.prisma.tournamentQuestion.findFirst({
-      where: { tournamentId, isUsed: false },
-      orderBy: { orderIndex: 'asc' },
-      include: {
-        question: {
+    // Get current question text ONLY if a question is actively running.
+    // The realtime gateway tracks live game state in memory; when the admin
+    // launches a question, gameStates[tournamentId] is set with the active
+    // question id. Without that, we must NOT leak future question text —
+    // even if the next-in-line tournamentQuestion exists in DB.
+    let currentQuestion: any = null;
+    if (tournament.status === 'LIVE') {
+      const liveState = this.gameGateway.getGameState(tournamentId);
+      if (liveState && liveState.questionId) {
+        const tq = await this.prisma.tournamentQuestion.findFirst({
+          where: { tournamentId, questionId: liveState.questionId },
           include: {
-            localizations: {
-              select: {
-                language: true,
-                questionText: true,
-                // NO correctAnswerLocalized — hidden from spectators
+            question: {
+              include: {
+                localizations: {
+                  select: {
+                    language: true,
+                    questionText: true,
+                    // NO correctAnswerLocalized — hidden from spectators
+                  },
+                },
               },
             },
           },
-        },
-      },
-    });
+        });
+        if (tq) {
+          currentQuestion = {
+            orderIndex: tq.orderIndex,
+            category: tq.question.category,
+            localizations: tq.question.localizations,
+          };
+        }
+      }
+    }
 
     // Count used questions
     const usedCount = await this.prisma.tournamentQuestion.count({
@@ -135,13 +155,7 @@ export class SpectatorsService {
         scoreSystem: p.currentScoreSystem,
         matchStatus: p.matchStatus,
       })),
-      currentQuestion: currentQuestion
-        ? {
-            orderIndex: currentQuestion.orderIndex,
-            category: currentQuestion.question.category,
-            localizations: currentQuestion.question.localizations,
-          }
-        : null,
+      currentQuestion,
     };
   }
 
