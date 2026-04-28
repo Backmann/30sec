@@ -108,6 +108,17 @@ export class SpectatorsService {
       where: { tournamentId },
     });
 
+    // Distinct spectators who answered at least one question — social proof
+    // for the live viewer ("X others are watching"). Approximation: if no
+    // questions were played yet, this will be 0; that's fine — we hide
+    // the counter in UI when below a threshold anyway.
+    const spectators = await this.prisma.spectatorAnswer.findMany({
+      where: { tournamentId },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+    const spectatorCount = spectators.length;
+
     return {
       id: tournament.id,
       title: tournament.title,
@@ -115,6 +126,7 @@ export class SpectatorsService {
       status: tournament.status,
       startAt: tournament.startAt,
       playersCount: tournament._count.participants,
+      spectatorCount,
       questionsProgress: { used: usedCount, total: totalQuestions },
       participants: tournament.participants.map((p) => ({
         nickname: p.user.profile?.nickname || 'unknown',
