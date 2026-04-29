@@ -21,6 +21,22 @@ export class SpectatorsService {
     });
     if (!tournament) throw new NotFoundException('Турнир не найден');
 
+    // Fairness gate: only accept if THIS question is the one currently being asked,
+    // AND we're still in a phase where players can be submitting (reading/answering).
+    // After lock — when the reveal has started or is about to — we don't accept
+    // new spectator answers, so a tech-savvy viewer can't POST after seeing the
+    // reveal text and have it count as a pre-reveal try.
+    if (tournament.status !== 'LIVE') {
+      throw new BadRequestException('Турнир не идёт');
+    }
+    const liveState = this.gameGateway.getGameState(dto.tournamentId);
+    if (!liveState || liveState.questionId !== dto.questionId) {
+      throw new BadRequestException('Этот вопрос больше не активен');
+    }
+    if (liveState.phase !== 'reading' && liveState.phase !== 'answering') {
+      throw new BadRequestException('Время ответа истекло');
+    }
+
     // Check not already saved
     const existing = await this.prisma.spectatorAnswer.findUnique({
       where: {
