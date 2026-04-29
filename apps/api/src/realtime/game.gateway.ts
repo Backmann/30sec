@@ -100,9 +100,23 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   emitPhaseChanged(tid: string, phase: string, sec: number) { this.server.to(`tournament:${tid}`).emit('phase_changed', { phase, seconds: sec }); }
   emitQuestionLocked(tid: string) { this.server.to(`tournament:${tid}`).emit('question_locked', {}); }
   emitJudgementReady(tid: string, data: any) {
-    this.server.to(`tournament:${tid}`).emit('score_updated', { userId: data.userId, scoreUser: data.scoreUser, scoreSystem: data.scoreSystem, matchStatus: data.matchStatus });
-    this.server.to(`tournament:${tid}`).emit('judgement_made', data);
+    // ⚠ Judgements no longer broadcast to player/spectator room — that would leak
+    // the correct answer to other players still thinking. Only admin gets it
+    // immediately for the judging UI. Players see results via emitJudgementsRevealed
+    // when the question fully ends.
     this.server.to(`admin:${tid}`).emit('judgement_made', data);
+  }
+  /** Tell ONE player privately "we got your answer, wait for reveal" — no result. */
+  emitYourAnswerReceived(tid: string, userId: string, data: { answerText: string }) {
+    this.server.to(`tournament:${tid}`).emit('your_answer_received', { userId, ...data });
+  }
+  /** Tell room someone (anonymously) submitted an answer — used for spectator avatar coloring. */
+  emitAnswerStatus(tid: string, userId: string) {
+    this.server.to(`tournament:${tid}`).emit('answer_status', { userId, answered: true });
+  }
+  /** Reveal all judgements to the room at once — synchronized fairness. */
+  emitJudgementsRevealed(tid: string, data: { judgements: any[]; correctAnswer: string }) {
+    this.server.to(`tournament:${tid}`).emit('judgements_revealed', data);
   }
   emitAnswerSubmitted(tid: string, data: any) { this.server.to(`admin:${tid}`).emit('answer_submitted', data); }
   emitAllAnswersSubmitted(tid: string) { this.server.to(`admin:${tid}`).emit('all_answers_submitted', {}); }

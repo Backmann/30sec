@@ -7,6 +7,12 @@ export class RealtimeService {
   // Map<tournamentId, { readingTimeout, answerInterval?, data }>
   private activeTimers = new Map<string, any>();
 
+  // Map<tournamentId, { questionId, judgements: judgementData[], correctAnswer }>
+  // Buffers individual player judgements until ALL players are judged or the
+  // answering timer ends, then reveals them as one synchronized event so a
+  // fast-correct answer can never tip off other players still thinking.
+  private pendingReveals = new Map<string, { questionId: string; judgements: any[]; correctAnswer: string }>();
+
   constructor(
     private readonly gateway: GameGateway,
     private readonly prisma: PrismaService,
@@ -68,6 +74,8 @@ export class RealtimeService {
       if (entry.answerInterval) clearInterval(entry.answerInterval);
       this.activeTimers.delete(tournamentId);
     }
+    // Clear pending reveal — won't be flushed since round is over
+    this.pendingReveals.delete(tournamentId);
     // Clear the cached game state so reconnects don't see stale question data.
     this.gateway.clearGameState(tournamentId);
     this.gateway.emitTournamentFinished(tournamentId);
@@ -90,6 +98,9 @@ export class RealtimeService {
       readingEndsAt: Date.now() + 20000,
       answeringEndsAt: Date.now() + 50000,
     });
+
+    // New question — wipe any leftover reveal buffer from a previous question
+    this.pendingReveals.delete(tournamentId);
 
     // Phase 1: Show question (reading)
     this.gateway.emitQuestionStarted(tournamentId, {
@@ -197,37 +208,109 @@ export class RealtimeService {
           }),
         ]);
 
-        // Emit judgement to player
-        this.judgementReady(tournamentId, {
+        // Emit judgement to player (buffered — will be flushed by flushReveal below)
+        await this.judgementReady(tournamentId, {
           userId: p.userId, answerId: answer.id, decision: 'REJECTED',
           correctAnswer: questionLoc?.correctAnswerLocalized || '',
           scoreUser, scoreSystem, matchStatus,
+          questionId,
         });
       }));
+
+      // Timer ended — flush whatever judgements are buffered, including the
+      // ones we just created for missing players AND any earlier judge
+      // decisions that have been waiting silently.
+      this.flushReveal(tournamentId);
     } catch (err) {
       console.error('Auto-reject error:', err);
     }
   }
 
   answerSubmitted(tournamentId: string, data: { answerId: string; userId: string; nickname: string; answerText: string }) {
+    // Admin sees full answer text (for grading)
     this.gateway.emitAnswerSubmitted(tournamentId, data);
+    // Room (players + spectators) sees only "this user answered" — used for avatar coloring
+    // and for the answering player's own "Ответ принят, ждём раскрытия" panel.
+    this.gateway.emitAnswerStatus(tournamentId, data.userId);
   }
 
   allAnswersSubmitted(tournamentId: string) {
     this.gateway.emitAllAnswersSubmitted(tournamentId);
   }
 
-  judgementReady(tournamentId: string, data: {
+  /**
+   * Buffer a judgement for the current question, then check if it's time to reveal.
+   * Reveal trigger: all active players for this tournament have been judged.
+   * Otherwise, the answering timer's expiry (autoRejectMissing) will flush whatever
+   * is in the buffer.
+   *
+   * Admin always gets the judgement immediately for their grading UI.
+   */
+  async judgementReady(tournamentId: string, data: {
     userId: string; answerId: string; decision: string; correctAnswer: string;
     scoreUser: number; scoreSystem: number; matchStatus: string;
+    questionId?: string;
   }) {
+    // Admin sees it now (no fairness concern — admin already knows the answer).
     this.gateway.emitJudgementReady(tournamentId, data);
+
+    // Match-finished broadcast can stay public (it's just W/L, no answer).
     if (['WON', 'LOST', 'FINISHED'].includes(data.matchStatus)) {
       this.gateway.emitMatchFinished(tournamentId, {
         userId: data.userId, matchStatus: data.matchStatus,
         finalScoreUser: data.scoreUser, finalScoreSystem: data.scoreSystem,
       });
     }
+
+    // Buffer for synchronized reveal.
+    let buf = this.pendingReveals.get(tournamentId);
+    if (!buf) {
+      // First judgement of this question — initialize buffer.
+      const questionId = data.questionId
+        || this.gateway.getGameState(tournamentId)?.questionId
+        || '';
+      buf = { questionId, judgements: [], correctAnswer: data.correctAnswer };
+      this.pendingReveals.set(tournamentId, buf);
+    }
+    // Update correct answer if we got it later
+    if (!buf.correctAnswer && data.correctAnswer) buf.correctAnswer = data.correctAnswer;
+    // Skip duplicate (same user already buffered for this question)
+    if (!buf.judgements.some(j => j.userId === data.userId)) {
+      buf.judgements.push(data);
+    }
+
+    // Check if all currently-active players (still APPROVED/PLAYING — not WON/LOST/FINISHED
+    // before this question) have been judged.
+    const totalActive = await this.prisma.tournamentParticipant.count({
+      where: { tournamentId, matchStatus: { in: ['PLAYING', 'APPROVED'] } },
+    });
+    // Also count those who finished THIS question (matchStatus changed during this call).
+    const finishedThisQuestion = buf.judgements.filter(j =>
+      ['WON', 'LOST', 'FINISHED'].includes(j.matchStatus),
+    ).length;
+    if (buf.judgements.length >= totalActive + finishedThisQuestion) {
+      // Everyone judged — reveal early, don't wait for timer.
+      this.flushReveal(tournamentId);
+    }
+  }
+
+  /**
+   * Send the buffered judgements to the entire room as one synchronized event.
+   * Idempotent — safe to call from both "all judged" and "timer expired" triggers.
+   */
+  private flushReveal(tournamentId: string) {
+    const buf = this.pendingReveals.get(tournamentId);
+    if (!buf || buf.judgements.length === 0) return;
+    this.gateway.emitJudgementsRevealed(tournamentId, {
+      judgements: buf.judgements,
+      correctAnswer: buf.correctAnswer,
+    });
+    this.pendingReveals.delete(tournamentId);
+  }
+
+  /** Admin-only emit for cases like UNDO where we don't want to surface anything to players. */
+  adminOnlyJudgement(tournamentId: string, data: any) {
+    this.gateway.emitJudgementReady(tournamentId, data);
   }
 
   reactionsUpdated(tournamentId: string, questionId: string, reactions: any[]) {

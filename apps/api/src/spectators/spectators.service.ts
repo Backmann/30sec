@@ -149,6 +149,7 @@ export class SpectatorsService {
       spectatorCount,
       questionsProgress: { used: usedCount, total: totalQuestions },
       participants: tournament.participants.map((p) => ({
+        userId: p.userId,
         nickname: p.user.profile?.nickname || 'unknown',
         flagCode: p.user.profile?.flagCode || null,
         scoreUser: p.currentScoreUser,

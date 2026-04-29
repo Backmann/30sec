@@ -143,7 +143,7 @@ export class JudgementsService {
     const questionLoc = await this.prisma.questionLocalization.findFirst({
       where: { questionId: answer.questionId },
     });
-    this.realtime.judgementReady(answer.tournamentId, {
+    await this.realtime.judgementReady(answer.tournamentId, {
       userId: answer.userId,
       answerId: answer.id,
       decision: dto.decision,
@@ -151,6 +151,7 @@ export class JudgementsService {
       scoreUser,
       scoreSystem,
       matchStatus,
+      questionId: answer.questionId,
     });
 
     // ─── Auto rank assignment ─────────────────────
@@ -239,8 +240,8 @@ export class JudgementsService {
     // Delete judgement
     await this.prisma.judgement.delete({ where: { id: judgementId } });
 
-    // Emit updated score
-    this.realtime.judgementReady(judgement.answer.tournamentId, {
+    // Emit updated score (admin only — UNDO bypasses player buffer)
+    this.realtime.adminOnlyJudgement(judgement.answer.tournamentId, {
       userId: judgement.answer.userId,
       answerId: judgement.answer.id,
       decision: 'UNDO',
