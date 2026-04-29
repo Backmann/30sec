@@ -18,6 +18,13 @@ export class TournamentsController {
   @Get()
   findAll(@Request() req, @Query('status') status?: string) { return this.tournamentsService.findAll(req.user.sub, status); }
 
+  // Public site-wide live indicator. Anonymous OK. NOTE: must be above @Get(':id')
+  // — same NestJS routing trap that bit free-count and library-overview before.
+  @Get('live/active')
+  getActiveLive() {
+    return this.tournamentsService.getActiveLive();
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   findOne(@Param('id') id: string, @Request() req) { return this.tournamentsService.findOne(id, req.user.sub); }

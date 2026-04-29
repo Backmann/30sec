@@ -471,6 +471,29 @@ export class TournamentsService {
 
 
   // ─── Public live state for OBS / stream viewers (no auth, no secrets) ──
+  /** Public list of tournaments currently in LIVE status. Used by the
+   * site-wide '🔴 идёт турнир' banner shown on every page. Returns minimal
+   * data — no participants, no questions, no answers — anonymous OK. */
+  async getActiveLive() {
+    const list = await this.prisma.tournament.findMany({
+      where: { status: 'LIVE' },
+      select: {
+        id: true,
+        title: true,
+        type: true,
+        _count: { select: { participants: true } },
+      },
+      orderBy: { startedAt: 'desc' },
+      take: 5,
+    });
+    return list.map(t => ({
+      id: t.id,
+      title: t.title,
+      type: t.type,
+      playersCount: t._count.participants,
+    }));
+  }
+
   async getPublicLive(tournamentId: string) {
     const tournament = await this.prisma.tournament.findUnique({
       where: { id: tournamentId },
