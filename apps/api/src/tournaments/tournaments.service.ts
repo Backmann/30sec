@@ -477,20 +477,21 @@ export class TournamentsService {
   async getActiveLive() {
     const list = await this.prisma.tournament.findMany({
       where: { status: 'LIVE' },
-      select: {
-        id: true,
-        title: true,
-        type: true,
-        _count: { select: { participants: true } },
-      },
-      orderBy: { startedAt: 'desc' },
+      select: { id: true, title: true, type: true },
+      orderBy: { startAt: 'desc' },
       take: 5,
     });
-    return list.map(t => ({
+    // Separate count query — keeps types simple and avoids Prisma select+_count edge cases.
+    const counts = await Promise.all(
+      list.map(t =>
+        this.prisma.tournamentParticipant.count({ where: { tournamentId: t.id } })
+      ),
+    );
+    return list.map((t, i) => ({
       id: t.id,
       title: t.title,
       type: t.type,
-      playersCount: t._count.participants,
+      playersCount: counts[i],
     }));
   }
 
