@@ -76,12 +76,6 @@ services:
   nginx:
     image: nginx:alpine
     container_name: 30sec-nginx
-    healthcheck:
-      test: ["CMD-SHELL", "wget -S -O /dev/null http://127.0.0.1/ 2>&1 | grep -q 'Server: nginx'"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
     restart: unless-stopped
     ports:
       - '80:80'

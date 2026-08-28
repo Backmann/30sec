@@ -2,8 +2,9 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
-import * as bcrypt from 'bcrypt';
+import * as argon2 from 'argon2';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
@@ -314,12 +315,39 @@ export class ProfilesService {
   }
 
   // GDPR: Delete (anonymize) account
+  //
+  // Anonymizes the account instead of hard-deleting it: tournament results,
+  // answers and judgements stay intact so other players' history and scores
+  // remain consistent. Everything that identifies the person is removed.
+  //
+  // Password check uses argon2 — the same algorithm auth.service uses to hash.
+  // (This used to call bcrypt.compare, which always returned false and made
+  // account deletion impossible for every user.)
   async deleteAccount(userId: string, password: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new Error('User not found');
-    const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) throw new Error('Invalid password');
+    if (!user) throw new NotFoundException('Пользователь не найден');
+    if (user.deletedAt) throw new BadRequestException('Аккаунт уже удалён');
+
+    // Google-only accounts have no password to verify against.
+    if (!user.passwordHash) {
+      throw new BadRequestException(
+        'Этот аккаунт зарегистрирован через Google и не имеет пароля. ' +
+        'Напишите нам через форму обратной связи, чтобы удалить его.',
+      );
+    }
+
+    let valid = false;
+    try {
+      valid = await argon2.verify(user.passwordHash, password);
+    } catch {
+      valid = false;
+    }
+    if (!valid) throw new ForbiddenException('Неверный пароль');
+
+    const stamp = new Date();
+
     await this.prisma.$transaction(async (tx) => {
+      // Profile: strip every identifying and optional personal field.
       await tx.profile.update({
         where: { userId },
         data: {
@@ -327,24 +355,54 @@ export class ProfilesService {
           firstName: 'Deleted',
           lastName: 'User',
           phone: null,
+          phoneVerifiedAt: null,
           countryCode: null,
           flagCode: null,
+          avatarUrl: null,
+          bio: null,
+          city: null,
+          dateOfBirth: null,
+          gender: null,
+          timezone: null,
+          showRealName: false,
+          showCity: false,
+          showAge: false,
+          showCountry: false,
         },
       });
+
+      // Sessions hold IP addresses, coordinates and device fingerprints —
+      // personal data with no reason to survive deletion.
+      await tx.userSession.deleteMany({ where: { userId } });
+
+      // Notifications are personal messages; nothing depends on them.
+      await tx.notification.deleteMany({ where: { userId } });
+
+      // Feedback rows keep the text (useful to us) but lose the contact data.
+      await tx.feedback.updateMany({
+        where: { userId },
+        data: { email: null, ipAddress: null, userAgent: null },
+      });
+
       await tx.user.update({
         where: { id: userId },
         data: {
           email: `deleted_${userId}@deleted.local`,
-          passwordHash: '',
+          passwordHash: null,
+          googleId: null,
+          marketingConsent: false,
           isActive: false,
-          deletedAt: new Date(),
+          deletedAt: stamp,
         },
       });
     });
-    return { success: true, message: 'Account successfully deleted. Your tournament history is anonymized but preserved for data integrity.' };
+
+    return {
+      success: true,
+      message:
+        'Account successfully deleted. Your tournament history is anonymized but preserved for data integrity.',
+    };
   }
-
-
 
   // ─── Activity heatmap + weekly stats ──────────
   async getActivityData(nickname: string) {

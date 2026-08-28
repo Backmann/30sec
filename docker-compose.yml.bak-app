@@ -76,12 +76,6 @@ services:
   nginx:
     image: nginx:alpine
     container_name: 30sec-nginx
-    healthcheck:
-      test: ["CMD-SHELL", "wget -S -O /dev/null http://127.0.0.1/ 2>&1 | grep -q 'Server: nginx'"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
     restart: unless-stopped
     ports:
       - '80:80'
@@ -93,7 +87,6 @@ services:
       - ./docker/nginx/mycongregation.conf:/etc/nginx/conf.d/mycongregation.conf:ro
       - /etc/cloudflare-origin:/etc/cloudflare-origin:ro
       - /var/www/mycongregation:/var/www/mycongregation:ro
-      - /var/www/mycongregation-app:/var/www/mycongregation-app:ro
     depends_on:
       - api
       - frontend
