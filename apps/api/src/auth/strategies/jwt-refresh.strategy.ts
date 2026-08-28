@@ -14,6 +14,8 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh'
   }
 
   async validate(payload: any) {
-    return { sub: payload.sub, email: payload.email, role: payload.role };
+    // tv travels with the token so auth.service can compare it against the
+    // user's current tokenVersion.
+    return { sub: payload.sub, email: payload.email, role: payload.role, tv: payload.tv };
   }
 }

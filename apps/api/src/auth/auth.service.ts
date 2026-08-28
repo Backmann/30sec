@@ -141,13 +141,20 @@ export class AuthService {
     };
   }
 
-  async refresh(userId: string) {
+  async refresh(userId: string, tokenVersion?: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
 
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Пользователь не найден');
+    }
+
+    // Tokens issued before a logout or a password reset are refused.
+    // Older tokens have no `tv` claim at all; treat those as version 0 so
+    // existing sessions keep working until their owner logs out.
+    if ((tokenVersion ?? 0) !== user.tokenVersion) {
+      throw new UnauthorizedException('Сессия завершена. Войдите заново.');
     }
 
     const tokens = await this.generateTokens(user.id, user.email, user.role);
@@ -295,8 +302,30 @@ export class AuthService {
     };
   }
 
+  /**
+   * Invalidate every refresh token this user holds.
+   *
+   * There is no server-side logout until now: the frontend simply dropped the
+   * tokens from localStorage while the refresh token stayed valid for 30 days.
+   * Bumping the version closes sessions on all devices at once — deliberate,
+   * since there is no per-device session list to choose from.
+   */
+  async logout(userId: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
+    return { success: true };
+  }
+
   private async generateTokens(userId: string, email: string, role: string) {
-    const payload = { sub: userId, email, role };
+    // Read tokenVersion here rather than at every call site — one query, and no
+    // way to forget it when a new login path is added later.
+    const current = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { tokenVersion: true },
+    });
+    const payload = { sub: userId, email, role, tv: current?.tokenVersion ?? 0 };
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwt.signAsync(payload, {
@@ -402,7 +431,8 @@ export class AuthService {
     const hashedPassword = await argon2.hash(newPassword);
     await this.prisma.user.update({
       where: { email: email.toLowerCase() },
-      data: { passwordHash: hashedPassword },
+      // Changing the password must also kill sessions opened with the old one.
+      data: { passwordHash: hashedPassword, tokenVersion: { increment: 1 } },
     });
 
     await this.verificationCodes.delete(email);

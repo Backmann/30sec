@@ -393,6 +393,8 @@ export class ProfilesService {
           marketingConsent: false,
           isActive: false,
           deletedAt: stamp,
+          // Kill any refresh token still out there.
+          tokenVersion: { increment: 1 },
         },
       });
     });

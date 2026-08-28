@@ -39,7 +39,13 @@ export class AuthController {
   @UseGuards(JwtRefreshGuard)
   @Post('refresh')
   async refresh(@Request() req) {
-    return this.authService.refresh(req.user.sub);
+    return this.authService.refresh(req.user.sub, req.user.tv);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  async logout(@Request() req) {
+    return this.authService.logout(req.user.sub);
   }
 
   @UseGuards(JwtAuthGuard)

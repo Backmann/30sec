@@ -76,6 +76,10 @@ model User {
   privacyAcceptedAt DateTime? @map("privacy_accepted_at")
   termsAcceptedAt   DateTime? @map("terms_accepted_at")
   marketingConsent  Boolean   @default(false) @map("marketing_consent")
+  // Bumped on logout and password reset; refresh tokens carrying an older
+  // value are rejected. Without it a stolen refresh token stayed valid for 30
+  // days even after the password changed.
+  tokenVersion      Int       @default(0) @map("token_version")
   isActive        Boolean   @default(true) @map("is_active")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
