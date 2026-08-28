@@ -15,3 +15,5 @@ yarn-error.log*
 prisma/schema.prisma.backup-*
 apps/api/src/app.module.ts.backup-*
 *.backup-*
+*.bak-*
+docker-compose.yml.bak*
