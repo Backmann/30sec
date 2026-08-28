@@ -299,8 +299,18 @@ export class TournamentsService {
       if (tq.de) locs.push({ language: 'de', questionText: tq.de[0], correctAnswerLocalized: tq.de[1] });
       if (tq.en) locs.push({ language: 'en', questionText: tq.en[0], correctAnswerLocalized: tq.en[1] });
 
+      // theme 'TEST' marks these as scaffolding, not library material.
+      // Four of them once ended up ACTIVE in the real question bank with no way
+      // to tell them apart. Clean them out with:
+      //   DELETE FROM questions WHERE theme = 'TEST';
       const q = await this.prisma.question.create({
-        data: { category: 'LOGIC', createdBy: adminId, localizations: { create: locs } },
+        data: {
+          category: 'LOGIC',
+          theme: 'TEST',
+          status: 'DRAFT',
+          createdBy: adminId,
+          localizations: { create: locs },
+        },
       });
       await this.prisma.tournamentQuestion.create({
         data: { tournamentId, questionId: q.id, orderIndex: existing + i },

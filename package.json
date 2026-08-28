@@ -1,7 +1,7 @@
 {
   "name": "30sec-api",
   "version": "0.1.0",
-  "description": "30sec. \u2014 Intellectual tournament platform API",
+  "description": "30sec. — Intellectual tournament platform API",
   "author": "Backmann",
   "private": true,
   "license": "UNLICENSED",
@@ -32,7 +32,6 @@
     "@sentry/node": "^8.0.0",
     "@types/nodemailer": "^7.0.11",
     "argon2": "^0.41.1",
-    "bcrypt": "^5.1.1",
     "bullmq": "^5.74.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
@@ -51,7 +50,6 @@
   "devDependencies": {
     "@nestjs/cli": "^10.4.0",
     "@nestjs/schematics": "^10.2.0",
-    "@types/bcrypt": "^5.0.2",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
     "@types/passport-jwt": "^4.0.1",

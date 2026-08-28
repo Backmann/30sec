@@ -81,7 +81,7 @@ export class RealtimeService {
     this.gateway.emitTournamentFinished(tournamentId);
   }
 
-  // Question flow: show question -> 15s reading -> 30s answer -> lock -> auto-reject empty
+  // Question flow: show question -> 20 s reading -> 30s answer -> lock -> auto-reject empty
   questionStarted(tournamentId: string, data: {
     tournamentQuestionId?: string; questionId?: string; orderIndex: number;
     category: string;
