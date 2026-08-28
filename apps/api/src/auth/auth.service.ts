@@ -325,6 +325,10 @@ export class AuthService {
   }
 
   async verifyEmail(email: string, code: string) {
+    if (await this.verificationCodes.isLockedOut(email)) {
+      throw new BadRequestException('Слишком много неверных попыток. Запросите новый код.');
+    }
+
     const stored = await this.verificationCodes.get(email);
 
     if (!stored) {
@@ -332,7 +336,12 @@ export class AuthService {
     }
 
     if (stored !== code) {
-      throw new BadRequestException('Неверный код');
+      const left = await this.verificationCodes.registerFailedAttempt(email);
+      throw new BadRequestException(
+        left > 0
+          ? `Неверный код. Осталось попыток: ${left}`
+          : 'Неверный код. Попытки исчерпаны — запросите новый код.',
+      );
     }
 
     // Mark email as verified
@@ -373,9 +382,20 @@ export class AuthService {
 
   async resetPassword(email: string, code: string, newPassword: string) {
     // Verify the code first
+    if (await this.verificationCodes.isLockedOut(email)) {
+      throw new BadRequestException('Слишком много неверных попыток. Запросите новый код.');
+    }
+
     const stored = await this.verificationCodes.get(email);
     if (!stored) throw new BadRequestException('Код не найден или истёк');
-    if (stored !== code) throw new BadRequestException('Неверный код');
+    if (stored !== code) {
+      const left = await this.verificationCodes.registerFailedAttempt(email);
+      throw new BadRequestException(
+        left > 0
+          ? `Неверный код. Осталось попыток: ${left}`
+          : 'Неверный код. Попытки исчерпаны — запросите новый код.',
+      );
+    }
 
     if (newPassword.length < 8) throw new BadRequestException('Пароль минимум 8 символов');
 
