@@ -1,9 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { GameGateway } from './game.gateway';
 import { PrismaService } from '../prisma/prisma.service';
+import { GameStateStore } from './game-state.store';
 
 @Injectable()
-export class RealtimeService {
+export class RealtimeService implements OnModuleInit {
+  private readonly logger = new Logger(RealtimeService.name);
   // Map<tournamentId, { readingTimeout, answerInterval?, data }>
   private activeTimers = new Map<string, any>();
 
@@ -16,7 +18,104 @@ export class RealtimeService {
   constructor(
     private readonly gateway: GameGateway,
     private readonly prisma: PrismaService,
+    private readonly stateStore: GameStateStore,
   ) {}
+
+  /**
+   * Re-arm everything a restart interrupted.
+   *
+   * Timers were setTimeout/setInterval closures inside this process, so a
+   * container restart froze any running question forever. The stored state
+   * carries absolute deadlines (readingEndsAt / answeringEndsAt), which is what
+   * makes recovery possible: we work out where the question is NOW and pick the
+   * schedule back up — or, if both deadlines already passed while we were down,
+   * close the question immediately.
+   */
+  async onModuleInit() {
+    const states = await this.stateStore.loadAll();
+    if (states.size === 0) return;
+
+    this.gateway.hydrateGameStates(states);
+
+    for (const [tournamentId, state] of states.entries()) {
+      if (!state?.questionId || state.phase === 'locked') continue;
+      try {
+        this.armQuestionTimers(
+          tournamentId,
+          state.questionId,
+          state.readingEndsAt,
+          state.answeringEndsAt,
+        );
+        this.logger.log(`Resumed question for tournament ${tournamentId}`);
+      } catch (err) {
+        this.logger.warn(`Could not resume ${tournamentId}: ${err.message}`);
+      }
+    }
+  }
+
+  /**
+   * Drive one question from wherever it currently is to its end.
+   *
+   * Shared by a fresh question, an extended reading phase and a restart
+   * recovery, so all three can never drift apart. Remaining time is always
+   * derived from the absolute deadlines rather than counted down from a fixed
+   * number — that is what lets it start mid-phase, and it also stops the
+   * displayed timer drifting when a tick is late.
+   */
+  private armQuestionTimers(
+    tournamentId: string,
+    questionId: string,
+    readingEndsAt: number,
+    answeringEndsAt: number,
+  ) {
+    const prev = this.activeTimers.get(tournamentId);
+    if (prev) {
+      if (prev.readingTimeout) clearTimeout(prev.readingTimeout);
+      if (prev.answerInterval) clearInterval(prev.answerInterval);
+    }
+
+    const entry: any = { data: { questionId } };
+
+    const startAnswering = () => {
+      this.gateway.setGamePhase(tournamentId, 'answering');
+      const secondsLeft = Math.max(0, Math.ceil((answeringEndsAt - Date.now()) / 1000));
+      this.gateway.emitPhaseChanged(tournamentId, 'answering', secondsLeft);
+
+      const iv = setInterval(() => {
+        const left = Math.max(0, Math.ceil((answeringEndsAt - Date.now()) / 1000));
+        if (left > 0) {
+          this.gateway.emitTimerTick(tournamentId, left, 'answering');
+        } else {
+          clearInterval(iv);
+          this.gateway.emitQuestionLocked(tournamentId);
+          this.gateway.setGamePhase(tournamentId, 'locked');
+          this.autoRejectMissing(tournamentId, questionId);
+          this.activeTimers.delete(tournamentId);
+        }
+      }, 1000);
+      entry.answerInterval = iv;
+    };
+
+    const now = Date.now();
+
+    if (now >= answeringEndsAt) {
+      // Both deadlines passed while the process was down — close it out now
+      // rather than leaving players staring at a dead question.
+      this.gateway.emitQuestionLocked(tournamentId);
+      this.gateway.setGamePhase(tournamentId, 'locked');
+      this.autoRejectMissing(tournamentId, questionId);
+      this.activeTimers.delete(tournamentId);
+      return;
+    }
+
+    if (now >= readingEndsAt) {
+      startAnswering();
+    } else {
+      entry.readingTimeout = setTimeout(startAnswering, readingEndsAt - now);
+    }
+
+    this.activeTimers.set(tournamentId, entry);
+  }
 
   /** Admin: extend reading phase by N seconds (only during reading) */
   extendReading(tournamentId: string, extraSeconds: number = 10): boolean {
@@ -34,26 +133,12 @@ export class RealtimeService {
     });
     const remainingMs = newReadingEnds - Date.now();
     this.gateway.emitPhaseChanged(tournamentId, 'reading', Math.ceil(remainingMs / 1000));
-    const data = entry.data;
-    const self = this;
-    entry.readingTimeout = setTimeout(() => {
-      self.gateway.setGamePhase(tournamentId, 'answering');
-      self.gateway.emitPhaseChanged(tournamentId, 'answering', 30);
-      let left = 30;
-      const iv = setInterval(() => {
-        left--;
-        if (left > 0) {
-          self.gateway.emitTimerTick(tournamentId, left, 'answering');
-        } else {
-          self.gateway.emitQuestionLocked(tournamentId);
-          self.gateway.setGamePhase(tournamentId, 'locked');
-          clearInterval(iv);
-          self.autoRejectMissing(tournamentId, data.questionId!);
-          self.activeTimers.delete(tournamentId);
-        }
-      }, 1000);
-      entry.answerInterval = iv;
-    }, remainingMs);
+    this.armQuestionTimers(
+      tournamentId,
+      entry.data?.questionId ?? gs.questionId,
+      newReadingEnds,
+      newAnsweringEnds,
+    );
     return true;
   }
 
@@ -89,14 +174,18 @@ export class RealtimeService {
     questionImages?: any[];
   }) {
     // Store current question state for reconnect
+    const startedAt = Date.now();
+    const readingEndsAt = startedAt + 20000;
+    const answeringEndsAt = startedAt + 50000;
+
     this.gateway.setGameState(tournamentId, {
       questionId: data.questionId,
       orderIndex: data.orderIndex,
       localizations: data.localizations,
       phase: 'reading',
-      startedAt: Date.now(),
-      readingEndsAt: Date.now() + 20000,
-      answeringEndsAt: Date.now() + 50000,
+      startedAt,
+      readingEndsAt,
+      answeringEndsAt,
     });
 
     // New question — wipe any leftover reveal buffer from a previous question
@@ -107,36 +196,14 @@ export class RealtimeService {
       ...data, phase: 'reading', timerSeconds: 0,
     });
 
-    // Clear any previous active timers for this tournament
-    const prev = this.activeTimers.get(tournamentId);
-    if (prev) {
-      if (prev.readingTimeout) clearTimeout(prev.readingTimeout);
-      if (prev.answerInterval) clearInterval(prev.answerInterval);
-    }
-    const entry: any = { data };
-
-    // After 20s (reading phase): start answering phase
-    entry.readingTimeout = setTimeout(() => {
-      this.gateway.setGamePhase(tournamentId, 'answering');
-      this.gateway.emitPhaseChanged(tournamentId, 'answering', 30);
-
-      let left = 30;
-      const iv = setInterval(() => {
-        left--;
-        if (left > 0) {
-          this.gateway.emitTimerTick(tournamentId, left, 'answering');
-        } else {
-          this.gateway.emitQuestionLocked(tournamentId);
-          this.gateway.setGamePhase(tournamentId, 'locked');
-          clearInterval(iv);
-          this.autoRejectMissing(tournamentId, data.questionId!);
-          this.activeTimers.delete(tournamentId);
-        }
-      }, 1000);
-      entry.answerInterval = iv;
-    }, 20000);
-
-    this.activeTimers.set(tournamentId, entry);
+    // One shared code path for fresh questions, extended reading and restart
+    // recovery — three schedules that must never disagree.
+    this.armQuestionTimers(
+      tournamentId,
+      data.questionId!,
+      readingEndsAt,
+      answeringEndsAt,
+    );
   }
 
   // Auto-create empty answers and auto-reject for missing players (OPTIMIZED)

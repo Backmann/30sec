@@ -5,6 +5,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { GameStateStore } from './game-state.store';
 
 // Spectating is public, so anonymous connections are allowed — but the origin is
 // pinned to the app itself, matching the HTTP layer. `origin: '*'` let any site
@@ -20,7 +21,11 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // Game state per tournament for reconnect
   private gameStates = new Map<string, any>();
 
-  constructor(private readonly jwt: JwtService, private readonly config: ConfigService) {}
+  constructor(
+    private readonly jwt: JwtService,
+    private readonly config: ConfigService,
+    private readonly stateStore: GameStateStore,
+  ) {}
 
   async handleConnection(client: Socket) {
     try {
@@ -88,14 +93,39 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return { event: 'error', data: { message: 'Not authorized' } };
   }
 
-  // Game state management
-  setGameState(tournamentId: string, state: any) { this.gameStates.set(tournamentId, state); }
-  clearGameState(tournamentId: string) { this.gameStates.delete(tournamentId); }
+  // ─── Game state management ───────────────────
+  //
+  // The Map stays the read path so every synchronous getGameState() caller
+  // keeps working. Each write is mirrored to Redis so a container restart no
+  // longer loses a running question — see GameStateStore.
+
+  setGameState(tournamentId: string, state: any) {
+    this.gameStates.set(tournamentId, state);
+    this.stateStore.save(tournamentId, state);
+  }
+
+  clearGameState(tournamentId: string) {
+    this.gameStates.delete(tournamentId);
+    this.stateStore.remove(tournamentId);
+  }
+
   setGamePhase(tournamentId: string, phase: string) {
     const s = this.gameStates.get(tournamentId);
-    if (s) { s.phase = phase; this.gameStates.set(tournamentId, s); }
+    if (s) {
+      s.phase = phase;
+      this.gameStates.set(tournamentId, s);
+      this.stateStore.save(tournamentId, s);
+    }
   }
+
   getGameState(tournamentId: string) { return this.gameStates.get(tournamentId) || null; }
+
+  /** Refill the in-memory Map at boot from what Redis kept. */
+  hydrateGameStates(states: Map<string, any>) {
+    for (const [tournamentId, state] of states.entries()) {
+      this.gameStates.set(tournamentId, state);
+    }
+  }
 
   // Emitters
   emitGlobal(event: string, data: any) { this.server.to('dashboard').emit(event, data); }
