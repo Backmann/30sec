@@ -201,6 +201,87 @@ export class JudgementsService {
     }
   }
 
+  // ─── Recompute a player's stats from source data ──
+  //
+  // Instead of reversing increments one by one (which silently drifts as soon
+  // as any path forgets a counter), we rebuild the whole PlayerStat row from
+  // the judgements themselves. Every counted answer has a judgement — including
+  // the auto-rejections created when a player runs out of time — so this is a
+  // complete and exact reconstruction.
+  //
+  // Side effect worth knowing: this also repairs accuracyPercent after
+  // auto-rejections, which never updated it.
+  private async recalculatePlayerStats(userId: string) {
+    const judgements = await this.prisma.judgement.findMany({
+      where: { answer: { userId } },
+      select: { decision: true, judgedAt: true },
+      orderBy: { judgedAt: 'asc' },
+    });
+
+    const totalAnswered = judgements.length;
+    const totalCorrect = judgements.filter(j => j.decision === 'ACCEPTED').length;
+    const totalWrong = totalAnswered - totalCorrect;
+
+    // Walk the timeline once to get both the trailing run and the best run.
+    let currentStreak = 0;
+    let bestStreak = 0;
+    for (const j of judgements) {
+      if (j.decision === 'ACCEPTED') {
+        currentStreak += 1;
+        if (currentStreak > bestStreak) bestStreak = currentStreak;
+      } else {
+        currentStreak = 0;
+      }
+    }
+
+    // Clean-sheet results are derivable from the participant rows.
+    const [wins12_0, losses0_12] = await Promise.all([
+      this.prisma.tournamentParticipant.count({
+        where: { userId, matchStatus: 'WON', currentScoreSystem: 0 },
+      }),
+      this.prisma.tournamentParticipant.count({
+        where: { userId, matchStatus: 'LOST', currentScoreUser: 0 },
+      }),
+    ]);
+
+    const accuracyPercent =
+      totalAnswered > 0
+        ? Math.round((totalCorrect / totalAnswered) * 100 * 100) / 100
+        : 0;
+
+    await this.prisma.playerStat.updateMany({
+      where: { userId },
+      data: {
+        totalAnswered,
+        totalCorrect,
+        totalWrong,
+        currentStreak,
+        bestStreak,
+        accuracyPercent,
+        wins12_0,
+        losses0_12,
+      },
+    });
+
+    // Rank follows totalCorrect, which may have gone down.
+    await this.updatePlayerRank(userId);
+
+    return { totalAnswered, totalCorrect, totalWrong, currentStreak, bestStreak, accuracyPercent };
+  }
+
+  // ─── Derive match status from the current score ──
+  // Same rules as judge(), kept in one place so undo can't disagree with it.
+  private deriveMatchStatus(scoreUser: number, scoreSystem: number): string {
+    if (scoreUser >= this.MAX_SCORE) return 'WON';
+    if (scoreSystem >= this.MAX_SCORE) return 'LOST';
+    if (scoreUser + scoreSystem >= this.MAX_QUESTIONS) {
+      if (scoreUser > scoreSystem) return 'WON';
+      if (scoreUser < scoreSystem) return 'LOST';
+      return 'FINISHED';
+    }
+    return 'PLAYING';
+  }
+
   // ─── Admin: Undo a judgement ──────────────────
   async undoJudgement(judgementId: string) {
     const judgement = await this.prisma.judgement.findUnique({
@@ -209,48 +290,57 @@ export class JudgementsService {
     });
     if (!judgement) throw new NotFoundException('Judgement not found');
 
+    const userId = judgement.answer.userId;
+    const tournamentId = judgement.answer.tournamentId;
+
     const participant = await this.prisma.tournamentParticipant.findUnique({
-      where: { userId_tournamentId: { userId: judgement.answer.userId, tournamentId: judgement.answer.tournamentId } },
+      where: { userId_tournamentId: { userId, tournamentId } },
     });
     if (!participant) throw new NotFoundException('Participant not found');
 
-    // Reverse score
+    // Reverse the score this judgement contributed.
     let scoreUser = participant.currentScoreUser;
     let scoreSystem = participant.currentScoreSystem;
-    if (judgement.decision === 'ACCEPTED') { scoreUser = Math.max(0, scoreUser - 1); }
-    else { scoreSystem = Math.max(0, scoreSystem - 1); }
+    if (judgement.decision === 'ACCEPTED') {
+      scoreUser = Math.max(0, scoreUser - 1);
+    } else {
+      scoreSystem = Math.max(0, scoreSystem - 1);
+    }
 
-    // Update participant score
-    await this.prisma.tournamentParticipant.update({
-      where: { id: participant.id },
-      data: { currentScoreUser: scoreUser, currentScoreSystem: scoreSystem, matchStatus: 'PLAYING' },
-    });
+    // The match may or may not still be over after the reversal — derive it
+    // rather than assuming PLAYING, which used to resurrect finished matches.
+    const matchStatus = this.deriveMatchStatus(scoreUser, scoreSystem);
+    const isOver = matchStatus === 'WON' || matchStatus === 'LOST' || matchStatus === 'FINISHED';
 
-    // Reverse player stats
-    await this.prisma.playerStat.updateMany({
-      where: { userId: judgement.answer.userId },
-      data: {
-        totalAnswered: { decrement: 1 },
-        ...(judgement.decision === 'ACCEPTED'
-          ? { totalCorrect: { decrement: 1 } }
-          : { totalWrong: { decrement: 1 } }),
-      },
-    });
+    // Delete + score update must not half-apply.
+    await this.prisma.$transaction([
+      this.prisma.judgement.delete({ where: { id: judgementId } }),
+      this.prisma.tournamentParticipant.update({
+        where: { id: participant.id },
+        data: {
+          currentScoreUser: scoreUser,
+          currentScoreSystem: scoreSystem,
+          matchStatus: matchStatus as any,
+          finishedAt: isOver ? participant.finishedAt ?? new Date() : null,
+        },
+      }),
+    ]);
 
-    // Delete judgement
-    await this.prisma.judgement.delete({ where: { id: judgementId } });
+    // Rebuild stats from what is left. Runs after the transaction so it sees
+    // the deleted judgement and the corrected participant row.
+    const stats = await this.recalculatePlayerStats(userId);
 
     // Emit updated score (admin only — UNDO bypasses player buffer)
-    this.realtime.adminOnlyJudgement(judgement.answer.tournamentId, {
-      userId: judgement.answer.userId,
+    this.realtime.adminOnlyJudgement(tournamentId, {
+      userId,
       answerId: judgement.answer.id,
       decision: 'UNDO',
       correctAnswer: '',
       scoreUser, scoreSystem,
-      matchStatus: 'PLAYING',
+      matchStatus,
     });
 
-    return { undone: true, scoreUser, scoreSystem };
+    return { undone: true, scoreUser, scoreSystem, matchStatus, stats };
   }
 
   // ─── Admin: Get all judgements for a tournament ──
