@@ -9,6 +9,7 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { QueueService } from '../queues/queue.service';
 import { JudgeAnswerDto } from './dto/judge-answer.dto';
+import { PlayerStatsService } from '../player-stats/player-stats.service';
 
 @Injectable()
 export class JudgementsService {
@@ -21,6 +22,7 @@ export class JudgementsService {
     private readonly notifications: NotificationsService,
     private readonly queue: QueueService,
     private readonly achievements: AchievementsService,
+    private readonly playerStats: PlayerStatsService,
   ) {}
 
   // ─── Admin: Judge an answer ───────────────────
@@ -155,7 +157,7 @@ export class JudgementsService {
     });
 
     // ─── Auto rank assignment ─────────────────────
-    await this.updatePlayerRank(answer.userId);
+    await this.playerStats.updateRank(answer.userId);
 
     return {
       judgement,
@@ -167,110 +169,8 @@ export class JudgementsService {
     };
   }
 
-  // ─── Auto-assign rank based on correct answers ──
-  private async updatePlayerRank(userId: string) {
-    try {
-      const stats = await this.prisma.playerStat.findUnique({
-        where: { userId },
-      });
-      if (!stats) return;
-
-      // Find the highest rank the player qualifies for
-      const ranks = await this.prisma.rank.findMany({
-        orderBy: { thresholdCorrectAnswers: 'desc' },
-      });
-
-      let newRankId: string | null = null;
-      for (const rank of ranks) {
-        if (stats.totalCorrect >= rank.thresholdCorrectAnswers) {
-          newRankId = rank.id;
-          break;
-        }
-      }
-
-      // Update if rank changed
-      if (newRankId && stats.rankId !== newRankId) {
-        await this.prisma.playerStat.update({
-          where: { userId },
-          data: { rankId: newRankId },
-        });
-        console.log(`🏅 Rank updated for user ${userId} → ${newRankId}`);
-      }
-    } catch (err) {
-      console.error('Rank update failed:', err.message);
-    }
-  }
-
-  // ─── Recompute a player's stats from source data ──
-  //
-  // Instead of reversing increments one by one (which silently drifts as soon
-  // as any path forgets a counter), we rebuild the whole PlayerStat row from
-  // the judgements themselves. Every counted answer has a judgement — including
-  // the auto-rejections created when a player runs out of time — so this is a
-  // complete and exact reconstruction.
-  //
-  // Side effect worth knowing: this also repairs accuracyPercent after
-  // auto-rejections, which never updated it.
-  private async recalculatePlayerStats(userId: string) {
-    const judgements = await this.prisma.judgement.findMany({
-      where: { answer: { userId } },
-      select: { decision: true, judgedAt: true },
-      orderBy: { judgedAt: 'asc' },
-    });
-
-    const totalAnswered = judgements.length;
-    const totalCorrect = judgements.filter(j => j.decision === 'ACCEPTED').length;
-    const totalWrong = totalAnswered - totalCorrect;
-
-    // Walk the timeline once to get both the trailing run and the best run.
-    let currentStreak = 0;
-    let bestStreak = 0;
-    for (const j of judgements) {
-      if (j.decision === 'ACCEPTED') {
-        currentStreak += 1;
-        if (currentStreak > bestStreak) bestStreak = currentStreak;
-      } else {
-        currentStreak = 0;
-      }
-    }
-
-    // Clean-sheet results are derivable from the participant rows.
-    const [wins12_0, losses0_12] = await Promise.all([
-      this.prisma.tournamentParticipant.count({
-        where: { userId, matchStatus: 'WON', currentScoreSystem: 0 },
-      }),
-      this.prisma.tournamentParticipant.count({
-        where: { userId, matchStatus: 'LOST', currentScoreUser: 0 },
-      }),
-    ]);
-
-    const accuracyPercent =
-      totalAnswered > 0
-        ? Math.round((totalCorrect / totalAnswered) * 100 * 100) / 100
-        : 0;
-
-    await this.prisma.playerStat.updateMany({
-      where: { userId },
-      data: {
-        totalAnswered,
-        totalCorrect,
-        totalWrong,
-        currentStreak,
-        bestStreak,
-        accuracyPercent,
-        wins12_0,
-        losses0_12,
-      },
-    });
-
-    // Rank follows totalCorrect, which may have gone down.
-    await this.updatePlayerRank(userId);
-
-    return { totalAnswered, totalCorrect, totalWrong, currentStreak, bestStreak, accuracyPercent };
-  }
-
   // ─── Derive match status from the current score ──
-  // Same rules as judge(), kept in one place so undo can't disagree with it.
+  // Same rules as judge(), kept in one place so undo cannot disagree with it.
   private deriveMatchStatus(scoreUser: number, scoreSystem: number): string {
     if (scoreUser >= this.MAX_SCORE) return 'WON';
     if (scoreSystem >= this.MAX_SCORE) return 'LOST';
@@ -328,7 +228,7 @@ export class JudgementsService {
 
     // Rebuild stats from what is left. Runs after the transaction so it sees
     // the deleted judgement and the corrected participant row.
-    const stats = await this.recalculatePlayerStats(userId);
+    const stats = await this.playerStats.recalculate(userId);
 
     // Emit updated score (admin only — UNDO bypasses player buffer)
     this.realtime.adminOnlyJudgement(tournamentId, {

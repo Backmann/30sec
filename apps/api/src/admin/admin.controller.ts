@@ -68,4 +68,10 @@ export class AdminController {
   getPlayerDetails(@Param('id') id: string) {
     return this.adminService.getPlayerDetails(id);
   }
+
+  @Post('recalculate-stats')
+  recalculateStats() {
+    return this.adminService.recalculateAllStats();
+  }
 }
+

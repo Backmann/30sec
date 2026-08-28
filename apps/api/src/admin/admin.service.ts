@@ -1,9 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PlayerStatsService } from '../player-stats/player-stats.service';
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly playerStats: PlayerStatsService,
+  ) {}
 
   // ─── Audit logs ───────────────────────────────
   async getAuditLogs(page: number = 1, limit: number = 50, actionType?: string) {
@@ -391,4 +395,13 @@ export class AdminService {
       })),
     };
   }
+
+  /**
+   * Repair tool: rebuild every player's stats from the surviving judgements.
+   * Needed once because deleted tournaments used to leave counters behind.
+   */
+  async recalculateAllStats() {
+    return this.playerStats.recalculateAll();
+  }
 }
+

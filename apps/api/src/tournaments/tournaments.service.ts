@@ -5,6 +5,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { QueueService } from '../queues/queue.service';
 import { CreateTournamentDto } from './dto/create-tournament.dto';
 import { UpdateTournamentDto } from './dto/update-tournament.dto';
+import { PlayerStatsService } from '../player-stats/player-stats.service';
 
 const RQ = 23;
 
@@ -41,6 +42,7 @@ export class TournamentsService {
     private readonly realtime: RealtimeService,
     private readonly notifications: NotificationsService,
     private readonly queue: QueueService,
+    private readonly playerStats: PlayerStatsService,
   ) {}
 
   // Helper: notify user in-app + email
@@ -155,6 +157,15 @@ export class TournamentsService {
     const t = await this.prisma.tournament.findUnique({ where: { id } });
     if (!t) throw new NotFoundException('Не найден');
     if (t.status === 'LIVE') throw new BadRequestException('Нельзя удалить активный');
+
+    // Capture who took part BEFORE the rows disappear — their stats are derived
+    // from answers and judgements, so deleting a tournament changes them.
+    // Skipping this is what left players with counters no data could support.
+    const affected = await this.prisma.tournamentParticipant.findMany({
+      where: { tournamentId: id },
+      select: { userId: true },
+    });
+
     await this.queue.cancelTournamentReminder(id);
     await this.prisma.tournamentQuestion.deleteMany({ where: { tournamentId: id } });
     await this.prisma.judgement.deleteMany({ where: { answer: { tournamentId: id } } });
@@ -163,8 +174,11 @@ export class TournamentsService {
     await this.prisma.questionVote.deleteMany({ where: { tournamentId: id } });
     await this.prisma.spectatorAnswer.deleteMany({ where: { tournamentId: id } });
     await this.prisma.tournament.delete({ where: { id } });
+
+    await this.playerStats.recalculateMany(affected.map(p => p.userId));
+
     this.realtime.broadcastTournamentListUpdate();
-    return { deleted: true };
+    return { deleted: true, statsRecalculated: affected.length };
   }
 
   // Player applies to join (status: PENDING)

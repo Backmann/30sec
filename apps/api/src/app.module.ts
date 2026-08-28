@@ -4,6 +4,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { ProxyThrottlerGuard } from './common/guards/proxy-throttler.guard';
 import { APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
+import { PlayerStatsModule } from './player-stats/player-stats.module';
 import { AuthModule } from './auth/auth.module';
 import { TournamentsModule } from './tournaments/tournaments.module';
 import { QuestionsModule } from './questions/questions.module';
@@ -38,6 +39,7 @@ import { TournamentRequestsModule } from './tournament-requests/tournament-reque
       }]),
     }),
     PrismaModule,
+    PlayerStatsModule,
     AuthModule,
     TournamentsModule,
     QuestionsModule,
