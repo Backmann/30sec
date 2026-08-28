@@ -6,7 +6,13 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 
-@WebSocketGateway({ cors: { origin: '*', credentials: true }, namespace: '/' })
+// Spectating is public, so anonymous connections are allowed — but the origin is
+// pinned to the app itself, matching the HTTP layer. `origin: '*'` let any site
+// open a socket against this server.
+@WebSocketGateway({
+  cors: { origin: process.env.APP_URL || 'https://30sec.org', credentials: true },
+  namespace: '/',
+})
 export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() server: Server;
 
@@ -106,9 +112,28 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // when the question fully ends.
     this.server.to(`admin:${tid}`).emit('judgement_made', data);
   }
-  /** Tell ONE player privately "we got your answer, wait for reveal" — no result. */
+  /** Find every live socket belonging to one user (same person, several tabs). */
+  private socketIdsForUser(userId: string): string[] {
+    const ids: string[] = [];
+    for (const [socketId, u] of this.connectedUsers.entries()) {
+      if (u.userId === userId) ids.push(socketId);
+    }
+    return ids;
+  }
+
+  /**
+   * Tell ONE player privately "we got your answer, wait for reveal" — no result.
+   *
+   * This used to emit to the whole tournament room with the answer text
+   * attached, so anyone in the room — including other players — could read
+   * everybody's answers during the answering phase, defeating the synchronized
+   * reveal built in RealtimeService. Now it reaches only that player's sockets.
+   * Spectator avatar colouring uses emitAnswerStatus below, which carries no text.
+   */
   emitYourAnswerReceived(tid: string, userId: string, data: { answerText: string }) {
-    this.server.to(`tournament:${tid}`).emit('your_answer_received', { userId, ...data });
+    for (const socketId of this.socketIdsForUser(userId)) {
+      this.server.to(socketId).emit('your_answer_received', { userId, ...data });
+    }
   }
   /** Tell room someone (anonymously) submitted an answer — used for spectator avatar coloring. */
   emitAnswerStatus(tid: string, userId: string) {
