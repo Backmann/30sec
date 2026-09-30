@@ -2,9 +2,13 @@ import { IsString, IsOptional, IsBoolean, MaxLength, MinLength, Matches, IsDateS
 export class UpdateProfileDto {
   @IsOptional()
   @IsString()
+  // Must stay in sync with RegisterDto, which allows 3-30 characters and a
+  // hyphen. While this rule was stricter, anyone who had registered with a
+  // hyphen or a longer nickname was refused on every profile save, even when
+  // they had not touched the nickname field at all.
   @MinLength(3, { message: 'Никнейм минимум 3 символа' })
-  @MaxLength(20, { message: 'Никнейм максимум 20 символов' })
-  @Matches(/^[a-zA-Z0-9_]+$/, { message: 'Никнейм: только буквы, цифры и _' })
+  @MaxLength(30, { message: 'Никнейм максимум 30 символов' })
+  @Matches(/^[a-zA-Z0-9_-]+$/, { message: 'Никнейм: только латиница, цифры, _ и -' })
   nickname?: string;
 
   @IsOptional()
