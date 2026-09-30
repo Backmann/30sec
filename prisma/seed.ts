@@ -60,7 +60,7 @@ async function main() {
     { code: 'wins_25', title: 'Легенда', description: '25 побед в турнирах', icon: '🥇', category: 'wins', sortOrder: 13 },
     { code: 'sharp_shooter', title: 'Меткий стрелок', description: 'Точность 80%+ за турнир (минимум 10 ответов)', icon: '🎯', category: 'accuracy', sortOrder: 20 },
     { code: 'perfect_round', title: 'Без промаха', description: '100% точность в турнире', icon: '💯', category: 'accuracy', sortOrder: 21 },
-    { code: 'quick_draw', title: 'Быстрая рука', description: 'Правильный ответ за 5 секунд', icon: '⚡', category: 'speed', sortOrder: 30 },
+    { code: 'quick_draw', title: 'Быстрая рука', description: 'Верный ответ ещё во время чтения вопроса, до начала отсчёта', icon: '⚡', category: 'speed', sortOrder: 30 },
     { code: 'streak_3', title: 'В ударе', description: '3 правильных ответа подряд', icon: '🔥', category: 'streaks', sortOrder: 40 },
     { code: 'streak_5', title: 'На огне', description: '5 правильных ответов подряд', icon: '🔥', category: 'streaks', sortOrder: 41 },
     { code: 'streak_10', title: 'Неудержимый', description: '10 правильных ответов подряд', icon: '🔥', category: 'streaks', sortOrder: 42 },

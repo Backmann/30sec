@@ -120,6 +120,15 @@ export class VotesService {
     // Sort by votes desc
     items.sort((a: any, b: any) => b.votes - a.votes);
 
+    // "Автор лучшего вопроса" — granted once voting has closed. Nothing fires
+    // when the 48-hour window expires, since there is no scheduler, so the
+    // results page doubles as the trigger: the first time anyone opens it
+    // after the window shut, the winning authors get their badge. grant() is
+    // idempotent, so every later visit does nothing.
+    if (!votingOpen && tournament.status === 'FINISHED' && totalVotes > 0) {
+      void this.awardBestQuestionAuthors(items).catch(() => {});
+    }
+
     return {
       tournamentTitle: tournament.title,
       votingOpen,
@@ -127,6 +136,19 @@ export class VotesService {
       totalVotes,
       items,
     };
+  }
+
+  /** Everyone tied at the top wins — a draw should not pick a favourite. */
+  private async awardBestQuestionAuthors(items: any[]) {
+    const topVotes = items[0]?.votes ?? 0;
+    if (topVotes <= 0) return;
+    const seen = new Set<string>();
+    for (const item of items) {
+      if (item.votes !== topVotes || !item.creator?.id) continue;
+      if (seen.has(item.creator.id)) continue;
+      seen.add(item.creator.id);
+      await this.achievements.onBestQuestion(item.creator.id);
+    }
   }
 
   // What did the user vote for

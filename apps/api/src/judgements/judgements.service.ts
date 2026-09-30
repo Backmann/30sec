@@ -171,6 +171,7 @@ export class JudgementsService {
         matchStatus,
         scoreUser,
         scoreSystem,
+        answeredDuringReading: answer.answeredDuringReading,
       });
     } catch (err) {
       console.error('Achievement award failed:', err?.message);
@@ -197,10 +198,15 @@ export class JudgementsService {
       matchStatus: string;
       scoreUser: number;
       scoreSystem: number;
+      answeredDuringReading?: boolean;
     },
   ) {
     if (ctx.decision === 'ACCEPTED') {
       await this.achievements.onAnswerAccepted(userId, ctx.currentStreak);
+      // "Быстрая рука" — answered before the clock even started, and was right.
+      if (ctx.answeredDuringReading) {
+        await this.achievements.grant(userId, 'quick_draw');
+      }
     }
     // "Проба пера" is about the very first answer ever. Counting it from a
     // streak of 1 would be a different thing entirely.

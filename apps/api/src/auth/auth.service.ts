@@ -28,13 +28,14 @@ export class AuthService {
   ) {}
 
   /**
-   * "Первый шаг" — awarded on any successful sign-in rather than at
-   * registration, so accounts created before achievements existed also get
-   * it. Fired without awaiting: grant() is idempotent and swallows its own
-   * errors, and nothing about a badge should be able to delay a login.
+   * Sign-in achievements: "Первый шаг" plus the attendance streaks. Awarded
+   * on any successful sign-in rather than at registration, so accounts that
+   * predate achievements get them too. Fired without awaiting — grants are
+   * idempotent and swallow their own errors, and no badge should delay a
+   * login.
    */
   private awardFirstLogin(userId: string) {
-    void this.achievements.grant(userId, 'first_login').catch(() => {});
+    void this.achievements.onLogin(userId).catch(() => {});
   }
 
   async register(dto: RegisterDto) {

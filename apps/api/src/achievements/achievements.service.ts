@@ -134,6 +134,41 @@ export class AchievementsService {
   }
 
   /**
+   * Everything a sign-in can earn: the onboarding badge, and the two
+   * attendance streaks.
+   *
+   * Streaks are derived from stored sessions rather than from a counter, for
+   * the same reason player stats are: a counter can drift, and there is
+   * nothing to rebuild it from. Days are bucketed in UTC — close enough for a
+   * "came back seven days running" badge, and it avoids guessing time zones.
+   */
+  async onLogin(userId: string) {
+    await this.grant(userId, 'first_login');
+
+    try {
+      const since = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+      const sessions = await this.prisma.userSession.findMany({
+        where: { userId, startedAt: { gte: since } },
+        select: { startedAt: true },
+      });
+      const days = new Set(sessions.map((s) => s.startedAt.toISOString().slice(0, 10)));
+
+      const lastNDaysCovered = (n: number): boolean => {
+        for (let i = 0; i < n; i++) {
+          const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          if (!days.has(d)) return false;
+        }
+        return true;
+      };
+
+      if (lastNDaysCovered(7)) await this.grant(userId, 'weekly_streak');
+      if (lastNDaysCovered(30)) await this.grant(userId, 'monthly_streak');
+    } catch {
+      // Attendance badges are never worth failing a login over.
+    }
+  }
+
+  /**
    * Award everything a user has already earned.
    *
    * The event hooks only fire from now on, so without this anyone who had
@@ -202,6 +237,35 @@ export class AchievementsService {
 
     const votes = await this.prisma.questionVote.count({ where: { voterUserId: userId } });
     if (votes >= 1) await award('first_vote');
+
+    // Answered before the clock started, and the judge accepted it.
+    const early = await this.prisma.judgement.count({
+      where: { decision: 'ACCEPTED', answer: { userId, answeredDuringReading: true } },
+    });
+    if (early >= 1) await award('quick_draw');
+
+    const watched = await this.prisma.spectatorAnswer.findMany({
+      where: { userId },
+      select: { tournamentId: true },
+      distinct: ['tournamentId'],
+    });
+    if (watched.length >= 5) await award('spectator');
+
+    // Attendance streaks, same UTC-day bucketing as onLogin.
+    const recentSessions = await this.prisma.userSession.findMany({
+      where: { userId, startedAt: { gte: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000) } },
+      select: { startedAt: true },
+    });
+    const days = new Set(recentSessions.map((s) => s.startedAt.toISOString().slice(0, 10)));
+    const covered = (n: number) => {
+      for (let i = 0; i < n; i++) {
+        const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        if (!days.has(d)) return false;
+      }
+      return true;
+    };
+    if (covered(7)) await award('weekly_streak');
+    if (covered(30)) await award('monthly_streak');
 
     return granted;
   }

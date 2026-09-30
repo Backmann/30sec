@@ -324,6 +324,9 @@ model Answer {
   tournamentId String   @map("tournament_id")
   questionId   String   @map("question_id")
   answerText   String   @db.VarChar(100) @map("answer_text")
+  // True when the answer arrived while the question was still being read,
+  // before the answering clock started. Feeds the "Быстрая рука" achievement.
+  answeredDuringReading Boolean @default(false) @map("answered_during_reading")
   submittedAt  DateTime @default(now()) @map("submitted_at")
   createdAt    DateTime @default(now()) @map("created_at")
 

@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GameGateway } from '../realtime/game.gateway';
+import { AchievementsService } from '../achievements/achievements.service';
 import { SaveSpectatorAnswerDto } from './dto/save-spectator-answer.dto';
 
 @Injectable()
@@ -12,6 +13,7 @@ export class SpectatorsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly gameGateway: GameGateway,
+    private readonly achievements: AchievementsService,
   ) {}
 
   // ─── Save personal answer (spectator) ─────────
@@ -64,6 +66,22 @@ export class SpectatorsService {
       update: { savedPersonalAnswers: { increment: 1 } },
       create: { userId, savedPersonalAnswers: 1 },
     });
+
+    // "Преданный зритель" — five tournaments watched. A tournament counts once
+    // the viewer has answered in it at least once: counting page visits would
+    // be inflated by a reload, and nothing records presence reliably.
+    try {
+      const watched = await this.prisma.spectatorAnswer.findMany({
+        where: { userId },
+        select: { tournamentId: true },
+        distinct: ['tournamentId'],
+      });
+      if (watched.length >= 5) {
+        await this.achievements.grant(userId, 'spectator');
+      }
+    } catch {
+      // A badge must never cost the viewer their saved answer.
+    }
 
     return answer;
   }

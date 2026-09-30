@@ -51,6 +51,18 @@ export class AnswersService {
     });
     if (existing) throw new BadRequestException('Вы уже ответили на этот вопрос');
 
+    // Answering is not gated by phase — a player may reply while the question
+    // is still being read, before the clock starts. That earns "Быстрая рука",
+    // but only the judge can say whether the answer was right, so the fact is
+    // recorded here and acted on at judging time.
+    const gameState = this.realtime.getGameState(dto.tournamentId);
+    const answeredDuringReading = Boolean(
+      gameState &&
+        gameState.questionId === dto.questionId &&
+        typeof gameState.readingEndsAt === 'number' &&
+        Date.now() < gameState.readingEndsAt,
+    );
+
     // Create answer
     const answer = await this.prisma.answer.create({
       data: {
@@ -58,6 +70,7 @@ export class AnswersService {
         tournamentId: dto.tournamentId,
         questionId: dto.questionId,
         answerText: dto.answerText.trim().substring(0, 50),
+        answeredDuringReading,
       },
     });
 
