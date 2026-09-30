@@ -5,3 +5,8 @@ dist
 *.md
 docker
 .dockerignore
+
+# Backups created during manual patching — never belong in an image
+*.bak-*
+*.backup-*
+*.tar.gz
