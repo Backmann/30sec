@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { answeredDuringReading } from '../common/game-rules';
 import { SubmitAnswerDto } from './dto/submit-answer.dto';
 
 @Injectable()
@@ -56,12 +57,7 @@ export class AnswersService {
     // but only the judge can say whether the answer was right, so the fact is
     // recorded here and acted on at judging time.
     const gameState = this.realtime.getGameState(dto.tournamentId);
-    const answeredDuringReading = Boolean(
-      gameState &&
-        gameState.questionId === dto.questionId &&
-        typeof gameState.readingEndsAt === 'number' &&
-        Date.now() < gameState.readingEndsAt,
-    );
+    const duringReading = answeredDuringReading(Date.now(), gameState, dto.questionId);
 
     // Create answer
     const answer = await this.prisma.answer.create({
@@ -70,7 +66,7 @@ export class AnswersService {
         tournamentId: dto.tournamentId,
         questionId: dto.questionId,
         answerText: dto.answerText.trim().substring(0, 50),
-        answeredDuringReading,
+        answeredDuringReading: duringReading,
       },
     });
 

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { accuracyPercent as calcAccuracy, rankForCorrectAnswers } from '../common/game-rules';
 
 /**
  * Single source of truth for PlayerStat numbers.
@@ -51,10 +52,7 @@ export class PlayerStatsService {
       }),
     ]);
 
-    const accuracyPercent =
-      totalAnswered > 0
-        ? Math.round((totalCorrect / totalAnswered) * 100 * 100) / 100
-        : 0;
+    const accuracyPercent = calcAccuracy(totalCorrect, totalAnswered);
 
     await this.prisma.playerStat.updateMany({
       where: { userId },
@@ -107,13 +105,9 @@ export class PlayerStatsService {
         orderBy: { thresholdCorrectAnswers: 'desc' },
       });
 
-      let newRankId: string | null = null;
-      for (const rank of ranks) {
-        if (stats.totalCorrect >= rank.thresholdCorrectAnswers) {
-          newRankId = rank.id;
-          break;
-        }
-      }
+      // Sorting happens inside the helper, so a query returning ranks in an
+      // unexpected order cannot silently hand everyone the lowest one.
+      const newRankId = rankForCorrectAnswers(ranks, stats.totalCorrect)?.id ?? null;
 
       if (newRankId && stats.rankId !== newRankId) {
         await this.prisma.playerStat.update({

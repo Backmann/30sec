@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { GameGateway } from './game.gateway';
 import { PrismaService } from '../prisma/prisma.service';
 import { GameStateStore } from './game-state.store';
+import { deriveMatchStatus } from '../common/game-rules';
 
 @Injectable()
 export class RealtimeService implements OnModuleInit {
@@ -271,10 +272,8 @@ export class RealtimeService implements OnModuleInit {
         let scoreUser = p.currentScoreUser;
         let matchStatus = p.matchStatus;
 
-        if (scoreSystem >= 12) matchStatus = 'LOST';
-        else if (scoreUser + scoreSystem >= 23) {
-          matchStatus = scoreUser > scoreSystem ? 'WON' : scoreUser < scoreSystem ? 'LOST' : 'FINISHED';
-        }
+        const derived = deriveMatchStatus(scoreUser, scoreSystem);
+        if (derived !== 'PLAYING') matchStatus = derived as any;
 
         // Batch: update participant + stats in parallel
         await Promise.all([

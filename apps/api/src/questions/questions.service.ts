@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { QUESTIONS_PER_TOURNAMENT } from '../common/game-rules';
 import { AchievementsService } from '../achievements/achievements.service';
 import { UploadsService } from '../uploads/uploads.service';
 import { CreateQuestionDto } from './dto/create-question.dto';
@@ -499,7 +500,7 @@ export class QuestionsService {
    * - "missing translations" = questions ACTIVE in `referenceLang` but missing a localization in `targetLang`
    */
   async libraryOverview(referenceLang: string = 'ru') {
-    const QUESTIONS_PER_TOURNAMENT = 23;
+    // Pool size comes from ../common/game-rules, defined once project-wide.
     const LANGUAGES = ['ru', 'en', 'de', 'uk', 'fr', 'es', 'it', 'pl'];
 
     // 1) All active questions with their localization languages and tournament bindings

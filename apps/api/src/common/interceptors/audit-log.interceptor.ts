@@ -28,7 +28,7 @@ const REDACTED_KEYS = new Set([
   'turnstiletoken',
 ]);
 
-function redactSecrets(value: any, depth = 0): any {
+export function redactSecrets(value: any, depth = 0): any {
   if (depth > 5 || value === null || typeof value !== 'object') return value;
   if (Array.isArray(value)) return value.map((item) => redactSecrets(item, depth + 1));
   const out: Record<string, any> = {};

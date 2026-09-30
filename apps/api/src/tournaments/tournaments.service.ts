@@ -7,7 +7,9 @@ import { CreateTournamentDto } from './dto/create-tournament.dto';
 import { UpdateTournamentDto } from './dto/update-tournament.dto';
 import { PlayerStatsService } from '../player-stats/player-stats.service';
 
-const RQ = 23;
+import { QUESTIONS_PER_TOURNAMENT, derivePhase } from '../common/game-rules';
+
+const RQ = QUESTIONS_PER_TOURNAMENT;
 
 const TEST_QUESTIONS = [
   { ru: ['Какое число следует: 2, 4, 8, 16, ?', '32'], de: ['Welche Zahl folgt: 2, 4, 8, 16, ?', '32'], en: ['What number follows: 2, 4, 8, 16, ?', '32'] },
@@ -421,20 +423,7 @@ export class TournamentsService {
 
     // Live phase + timer from realtime gateway
     const gameState = this.realtime.getGameState(tournamentId);
-    let phase = 'idle';
-    let timerSeconds = 0;
-    if (gameState) {
-      const now = Date.now();
-      if (now < gameState.readingEndsAt) {
-        phase = 'reading';
-        timerSeconds = Math.ceil((gameState.readingEndsAt - now) / 1000);
-      } else if (now < gameState.answeringEndsAt) {
-        phase = 'answering';
-        timerSeconds = Math.ceil((gameState.answeringEndsAt - now) / 1000);
-      } else {
-        phase = 'judging';
-      }
-    }
+    const { phase, timerSeconds } = derivePhase(Date.now(), gameState);
 
     // Get all answers for current question (for judging)
     let currentAnswers: any[] = [];
@@ -559,20 +548,7 @@ export class TournamentsService {
     const remainingQuestions = totalQuestions - currentQuestionNumber;
 
     const gameState = this.realtime.getGameState(tournamentId);
-    let phase = 'idle';
-    let timerSeconds = 0;
-    if (gameState) {
-      const now = Date.now();
-      if (now < gameState.readingEndsAt) {
-        phase = 'reading';
-        timerSeconds = Math.ceil((gameState.readingEndsAt - now) / 1000);
-      } else if (now < gameState.answeringEndsAt) {
-        phase = 'answering';
-        timerSeconds = Math.ceil((gameState.answeringEndsAt - now) / 1000);
-      } else {
-        phase = 'judging';
-      }
-    }
+    const { phase, timerSeconds } = derivePhase(Date.now(), gameState);
 
     // For public: only show answers after they are judged (no spoilers)
     let currentAnswers: any[] = [];
@@ -868,20 +844,7 @@ export class TournamentsService {
 
     // Get realtime phase from gateway
     const gameState = this.realtime.getGameState(tournamentId);
-    let phase = 'idle';
-    let timerSeconds = 0;
-    if (gameState) {
-      const now = Date.now();
-      if (now < gameState.readingEndsAt) {
-        phase = 'reading';
-        timerSeconds = Math.ceil((gameState.readingEndsAt - now) / 1000);
-      } else if (now < gameState.answeringEndsAt) {
-        phase = 'answering';
-        timerSeconds = Math.ceil((gameState.answeringEndsAt - now) / 1000);
-      } else {
-        phase = 'judging';
-      }
-    }
+    const { phase, timerSeconds } = derivePhase(Date.now(), gameState);
 
     // Load user role to decide if correct answer should be exposed
     const currentUser = await this.prisma.user.findUnique({

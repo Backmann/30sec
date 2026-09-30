@@ -10,11 +10,22 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { QueueService } from '../queues/queue.service';
 import { JudgeAnswerDto } from './dto/judge-answer.dto';
 import { PlayerStatsService } from '../player-stats/player-stats.service';
+import {
+  MAX_SCORE,
+  QUESTIONS_PER_TOURNAMENT,
+  accuracyPercent,
+  applyJudgement,
+  deriveMatchStatus,
+  isMatchOver,
+  wasDecisiveWin,
+} from '../common/game-rules';
 
 @Injectable()
 export class JudgementsService {
-  private readonly MAX_SCORE = 12;
-  private readonly MAX_QUESTIONS = 23;
+  // Thresholds and the win condition live in ../common/game-rules, which is
+  // covered by tests. Keeping local copies is what let them drift apart.
+  private readonly MAX_SCORE = MAX_SCORE;
+  private readonly MAX_QUESTIONS = QUESTIONS_PER_TOURNAMENT;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -60,11 +71,7 @@ export class JudgementsService {
     let scoreUser = participant.currentScoreUser;
     let scoreSystem = participant.currentScoreSystem;
 
-    if (dto.decision === 'ACCEPTED') {
-      scoreUser += 1;
-    } else {
-      scoreSystem += 1;
-    }
+    ({ scoreUser, scoreSystem } = applyJudgement(scoreUser, scoreSystem, dto.decision as any));
 
     // Update player stats
     await this.prisma.playerStat.updateMany({
@@ -91,16 +98,8 @@ export class JudgementsService {
     }
 
     // Check match end (12 points or 23 questions)
-    let matchStatus = participant.matchStatus;
-    const totalQuestions = scoreUser + scoreSystem;
-
-    if (scoreUser >= this.MAX_SCORE) {
-      matchStatus = 'WON';
-    } else if (scoreSystem >= this.MAX_SCORE) {
-      matchStatus = 'LOST';
-    } else if (totalQuestions >= this.MAX_QUESTIONS) {
-      matchStatus = scoreUser > scoreSystem ? 'WON' : scoreUser < scoreSystem ? 'LOST' : 'FINISHED';
-    }
+    const derived = deriveMatchStatus(scoreUser, scoreSystem);
+    const matchStatus = derived === 'PLAYING' ? participant.matchStatus : derived;
 
     // Update participant
     const updatedParticipant = await this.prisma.tournamentParticipant.update({
@@ -109,9 +108,7 @@ export class JudgementsService {
         currentScoreUser: scoreUser,
         currentScoreSystem: scoreSystem,
         matchStatus,
-        ...(matchStatus === 'WON' || matchStatus === 'LOST' || matchStatus === 'FINISHED'
-          ? { finishedAt: new Date() }
-          : {}),
+        ...(isMatchOver(matchStatus) ? { finishedAt: new Date() } : {}),
       },
     });
 
@@ -120,10 +117,9 @@ export class JudgementsService {
       where: { userId: answer.userId },
     });
     if (stats && stats.totalAnswered > 0) {
-      const accuracy = (stats.totalCorrect / stats.totalAnswered) * 100;
       await this.prisma.playerStat.update({
         where: { userId: answer.userId },
-        data: { accuracyPercent: Math.round(accuracy * 100) / 100 },
+        data: { accuracyPercent: accuracyPercent(stats.totalCorrect, stats.totalAnswered) },
       });
     }
 
@@ -214,15 +210,12 @@ export class JudgementsService {
       await this.achievements.grant(userId, 'first_answer');
     }
 
-    const matchOver =
-      ctx.matchStatus === 'WON' || ctx.matchStatus === 'LOST' || ctx.matchStatus === 'FINISHED';
-    if (!matchOver) return;
+    if (!isMatchOver(ctx.matchStatus)) return;
 
     if (ctx.matchStatus === 'WON') {
       // A score of 12:11 is only reachable from 11:11, so this win came down
       // to the final question.
-      const wasDecisive =
-        ctx.scoreUser === this.MAX_SCORE && ctx.scoreSystem === this.MAX_SCORE - 1;
+      const wasDecisive = wasDecisiveWin(ctx.scoreUser, ctx.scoreSystem);
       await this.achievements.onTournamentWon(userId, wasDecisive);
     }
 
@@ -234,19 +227,6 @@ export class JudgementsService {
     });
     const accepted = judged.filter((j) => j.decision === 'ACCEPTED').length;
     await this.achievements.onTournamentFinished(userId, accepted, judged.length);
-  }
-
-  // ─── Derive match status from the current score ──
-  // Same rules as judge(), kept in one place so undo cannot disagree with it.
-  private deriveMatchStatus(scoreUser: number, scoreSystem: number): string {
-    if (scoreUser >= this.MAX_SCORE) return 'WON';
-    if (scoreSystem >= this.MAX_SCORE) return 'LOST';
-    if (scoreUser + scoreSystem >= this.MAX_QUESTIONS) {
-      if (scoreUser > scoreSystem) return 'WON';
-      if (scoreUser < scoreSystem) return 'LOST';
-      return 'FINISHED';
-    }
-    return 'PLAYING';
   }
 
   // ─── Admin: Undo a judgement ──────────────────
@@ -276,8 +256,8 @@ export class JudgementsService {
 
     // The match may or may not still be over after the reversal — derive it
     // rather than assuming PLAYING, which used to resurrect finished matches.
-    const matchStatus = this.deriveMatchStatus(scoreUser, scoreSystem);
-    const isOver = matchStatus === 'WON' || matchStatus === 'LOST' || matchStatus === 'FINISHED';
+    const matchStatus = deriveMatchStatus(scoreUser, scoreSystem);
+    const isOver = isMatchOver(matchStatus);
 
     // Delete + score update must not half-apply.
     await this.prisma.$transaction([

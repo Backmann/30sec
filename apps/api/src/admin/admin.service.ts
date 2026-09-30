@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlayerStatsService } from '../player-stats/player-stats.service';
 import { AchievementsService } from '../achievements/achievements.service';
+import { QUESTIONS_PER_TOURNAMENT } from '../common/game-rules';
 
 @Injectable()
 export class AdminService {
@@ -111,7 +112,7 @@ export class AdminService {
         type: t.type,
         startAt: t.startAt,
         questionsCount: t._count.tournamentQuestions,
-        questionsRequired: 23,
+        questionsRequired: QUESTIONS_PER_TOURNAMENT,
         participantsCount: t._count.participants,
         ready: t._count.tournamentQuestions >= 23,
       })),
