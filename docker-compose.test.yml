@@ -1,0 +1,30 @@
+# A throwaway database for integration tests.
+#
+# Separate from the running stack on purpose: tests truncate every table
+# between cases, and pointing that at the real database would be a very short
+# story. The data lives in tmpfs — it never touches disk and disappears with
+# the container.
+#
+# No port is published. This host already runs two databases (5432 and 5433),
+# and publishing a third invites exactly the collision it caused the first
+# time. The test runner joins this compose project's network instead and
+# reaches the container by name.
+#
+# Started and stopped by scripts/test-integration.sh under its own project
+# name, so it never mixes with the running stack.
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: 30sec-postgres-test
+    environment:
+      POSTGRES_DB: sec30_test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U test -d sec30_test']
+      interval: 2s
+      timeout: 3s
+      retries: 15

@@ -9,7 +9,7 @@ RUN npm install
 COPY prisma ./prisma
 RUN npx prisma generate
 
-COPY tsconfig.json tsconfig.build.json nest-cli.json jest.config.js ./
+COPY tsconfig.json tsconfig.build.json nest-cli.json jest.config.js jest.integration.config.js ./
 COPY apps ./apps
 
 # Tests run here, as part of the build. There is no Node on the host — every
