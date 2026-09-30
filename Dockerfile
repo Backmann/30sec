@@ -9,8 +9,15 @@ RUN npm install
 COPY prisma ./prisma
 RUN npx prisma generate
 
-COPY tsconfig.json tsconfig.build.json nest-cli.json ./
+COPY tsconfig.json tsconfig.build.json nest-cli.json jest.config.js ./
 COPY apps ./apps
+
+# Tests run here, as part of the build. There is no Node on the host — every
+# build happens inside Docker — so this is the one place they will actually be
+# run on every deploy. A failing rule stops the image from being produced,
+# which is the point: broken match logic cannot reach the server.
+# They need no database, no Redis and no network, so this stays quick.
+RUN npx jest --ci
 
 RUN npm run build
 
