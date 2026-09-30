@@ -42,6 +42,11 @@ banner when it happens.
 | `answering` | 30 s | One answer per player, up to 50 characters, Enter submits. |
 | `judging` | — | Answers are locked, non-responders auto-rejected, the host rules on each answer. |
 
+Answering is not gated by phase: a player may reply while the question is
+still being read, before the clock starts. Doing so and being right earns the
+"Быстрая рука" badge — the reward is for knowing the answer at once, not for
+typing quickly.
+
 **Judging and the synchronised reveal.** The host sees each answer the
 moment it arrives and rules accept or reject, with an optional reason code;
 any ruling can be undone. Players see none of this while it happens. A
@@ -292,10 +297,6 @@ on-location quests.
 Being honest about what is defined but not yet wired up, so nobody reads
 this as a promise:
 
-- **Achievements** — 21 are defined across 9 categories and displayed with
-  locked/unlocked state, but only three are currently granted (first
-  question authored, ten authored, first vote). The remaining hooks are
-  written and not yet called.
 - **Seasonal finals counters** appear on the profile and are never written.
 - **Turnstile (CAPTCHA)** is implemented as a guard but not applied to any
   endpoint.
