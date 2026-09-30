@@ -84,14 +84,25 @@ async function main() {
 
   // ─── Admin User ───────────────────────────────
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@30sec.game';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'Admin_30sec_2026!';
   const adminNickname = process.env.ADMIN_NICKNAME || 'admin';
+
+  // No fallback password here on purpose. This repository is public, so any
+  // default literal would be a publicly known credential for the live admin
+  // account. The seed refuses to create an admin without an explicit
+  // ADMIN_PASSWORD in the environment.
+  const adminPassword = process.env.ADMIN_PASSWORD;
 
   const existingAdmin = await prisma.user.findUnique({
     where: { email: adminEmail },
   });
 
   if (!existingAdmin) {
+    if (!adminPassword || adminPassword.length < 12) {
+      throw new Error(
+        'ADMIN_PASSWORD is not set, or is shorter than 12 characters. ' +
+          'Set a strong ADMIN_PASSWORD in .env before seeding — there is no default.',
+      );
+    }
     const hashedPassword = await argon2.hash(adminPassword);
 
     const admin = await prisma.user.create({
