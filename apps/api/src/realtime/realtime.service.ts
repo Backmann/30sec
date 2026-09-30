@@ -232,6 +232,15 @@ export class RealtimeService implements OnModuleInit {
         where: { questionId },
       });
 
+      // Who these automatic rejections are recorded under. The player used to
+      // be named as their own judge, which read in the audit trail as if they
+      // had ruled against themselves. The tournament's host is the honest
+      // answer: it is their clock that ran out.
+      const tournament = await this.prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        select: { createdBy: true },
+      });
+
       // 5. Process all missing players in parallel (batch)
       await Promise.all(missing.map(async (p) => {
         // Create empty answer
@@ -248,7 +257,13 @@ export class RealtimeService implements OnModuleInit {
 
         // Create auto-judgement
         await this.prisma.judgement.create({
-          data: { answerId: answer.id, judgeId: p.userId, decision: 'REJECTED', reasonCode: 'NO_ANSWER', judgedAt: new Date() },
+          data: {
+            answerId: answer.id,
+            judgeId: tournament?.createdBy ?? p.userId,
+            decision: 'REJECTED',
+            reasonCode: 'NO_ANSWER',
+            judgedAt: new Date(),
+          },
         });
 
         // Update score

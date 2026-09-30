@@ -64,7 +64,10 @@ export class TournamentsService {
   async create(dto: CreateTournamentDto, adminId: string) {
     if (!dto.startAt) throw new BadRequestException('Укажите дату и время старта');
     const t = await this.prisma.tournament.create({
-      data: { title: dto.title, type: dto.type, theme: dto.theme || null, startAt: new Date(dto.startAt), maxPlayers: null, createdBy: adminId },
+      // maxPlayers used to be hardcoded to null, so the field existed in the
+      // API and did nothing. It is optional: left unset, the tournament has no
+      // cap, which is the behaviour everything relied on.
+      data: { title: dto.title, type: dto.type, theme: dto.theme || null, startAt: new Date(dto.startAt), maxPlayers: dto.maxPlayers ?? null, createdBy: adminId },
     });
 
     // Schedule 15-min reminder
@@ -191,6 +194,18 @@ export class TournamentsService {
       where: { userId_tournamentId: { userId, tournamentId } },
     });
     if (existing) return existing;
+
+    // Respect the cap when one is set. Rejected applicants do not occupy a
+    // seat; everyone else does, including those still awaiting a decision —
+    // otherwise a queue of pending applications could quietly overfill it.
+    if (t.maxPlayers !== null && t.maxPlayers !== undefined) {
+      const taken = await this.prisma.tournamentParticipant.count({
+        where: { tournamentId, matchStatus: { not: 'REJECTED' } },
+      });
+      if (taken >= t.maxPlayers) {
+        throw new BadRequestException('Мест в этом турнире больше нет');
+      }
+    }
 
     const participant = await this.prisma.tournamentParticipant.create({
       data: { userId, tournamentId, matchStatus: 'PENDING' },
