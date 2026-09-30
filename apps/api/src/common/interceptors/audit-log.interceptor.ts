@@ -7,6 +7,39 @@ import {
 import { Observable, tap } from 'rxjs';
 import { PrismaService } from '../../prisma/prisma.service';
 
+// Request bodies are stored so an admin action can be reconstructed later.
+// Some of those bodies carry credentials, though — a password reset, a Google
+// ID token, a verification code — and an audit log is the last place a secret
+// should sit in plain text. These keys are replaced before the row is written.
+const REDACTED_KEYS = new Set([
+  'password',
+  'newpassword',
+  'oldpassword',
+  'currentpassword',
+  'confirmpassword',
+  'token',
+  'accesstoken',
+  'refreshtoken',
+  'credential',
+  'code',
+  'secret',
+  'apikey',
+  'authorization',
+  'turnstiletoken',
+]);
+
+function redactSecrets(value: any, depth = 0): any {
+  if (depth > 5 || value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map((item) => redactSecrets(item, depth + 1));
+  const out: Record<string, any> = {};
+  for (const [key, val] of Object.entries(value)) {
+    out[key] = REDACTED_KEYS.has(key.toLowerCase())
+      ? '[redacted]'
+      : redactSecrets(val, depth + 1);
+  }
+  return out;
+}
+
 @Injectable()
 export class AuditLogInterceptor implements NestInterceptor {
   constructor(private readonly prisma: PrismaService) {}
@@ -51,7 +84,8 @@ export class AuditLogInterceptor implements NestInterceptor {
               actionType,
               entityType,
               entityId: entityId ? String(entityId) : null,
-              payloadJson: body && Object.keys(body).length > 0 ? body : null,
+              payloadJson:
+                body && Object.keys(body).length > 0 ? redactSecrets(body) : null,
             },
           });
         } catch (err) {
