@@ -305,8 +305,9 @@ this as a promise:
   a model.
 - **No scheduler.** Delayed work is BullMQ only; queue entries carry a
   30-day TTL that nothing currently enforces.
-- **No automated tests** in either repository, and no OpenAPI/Swagger UI
-  despite the dependency being present.
+- **The web client has no tests.** The API does — see below — but nothing
+  covers the pages, and the pages are where most of this year's bugs were.
+- **No OpenAPI/Swagger UI**, despite the dependency being present.
 - **Push notifications** exist in the channel enum only. Delivery is in-app
   and e-mail.
 - Client pages are all client-rendered, so public pages are empty to
@@ -394,3 +395,43 @@ curl -s http://127.0.0.1:3000/api/health
 
 `GET /api/admin/health` additionally reports database latency, entity
 counts, disk usage, process uptime and memory — for administrators only.
+
+### Tests
+
+Two suites, split by what they need.
+
+**Unit tests** cover the rules of a match — the win condition, phase
+derivation, accuracy, rank thresholds, and the redaction of credentials from
+the admin audit log. They need no database, no Redis and no network:
+
+```bash
+npm test
+```
+
+They also run inside the Docker build, before compilation. A failing rule
+stops the image from being produced, so broken match logic cannot reach the
+server. That is the only gate on this project, and it is deliberate.
+
+**Integration tests** run against a throwaway Postgres and cover what only a
+real database can show: that statistics rebuild from judgements rather than
+from counters, that an undo reopens a finished match, that achievements are
+granted alongside the score, and that the schema's own cascades and
+constraints hold.
+
+```bash
+./scripts/test-integration.sh
+```
+
+The script starts a disposable database in its own compose project, pushes
+the schema, runs the tests and tears it down afterwards — including when
+they fail. The data lives in tmpfs and no port is published, so it cannot
+collide with a database already running on the host.
+
+**Smoke checks** ask a running server the questions that matter after a
+deploy, including whether a correct answer is exposed to anyone who has not
+earned the right to see it:
+
+```bash
+./scripts/smoke.sh                        # the live site
+./scripts/smoke.sh http://127.0.0.1:3000  # a local container
+```
