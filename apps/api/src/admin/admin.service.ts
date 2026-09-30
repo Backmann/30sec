@@ -1,12 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlayerStatsService } from '../player-stats/player-stats.service';
+import { AchievementsService } from '../achievements/achievements.service';
 
 @Injectable()
 export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly playerStats: PlayerStatsService,
+    private readonly achievements: AchievementsService,
   ) {}
 
   // ─── Audit logs ───────────────────────────────
@@ -402,6 +404,16 @@ export class AdminService {
    */
   async recalculateAllStats() {
     return this.playerStats.recalculateAll();
+  }
+
+  /**
+   * Award everything players have already earned. The achievement hooks only
+   * fire from the moment they were wired up, so without this someone who had
+   * already won five tournaments would have to win a sixth to be told so.
+   * Idempotent: a second run grants nothing.
+   */
+  async recalculateAchievements() {
+    return this.achievements.backfillAll();
   }
 }
 

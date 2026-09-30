@@ -73,5 +73,12 @@ export class AdminController {
   recalculateStats() {
     return this.adminService.recalculateAllStats();
   }
+
+  // One-off repair after wiring up the achievement hooks: grants what players
+  // had already earned before those hooks existed. Safe to run again.
+  @Post('recalculate-achievements')
+  recalculateAchievements() {
+    return this.adminService.recalculateAchievements();
+  }
 }
 

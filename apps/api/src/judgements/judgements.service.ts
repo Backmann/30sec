@@ -159,6 +159,23 @@ export class JudgementsService {
     // ─── Auto rank assignment ─────────────────────
     await this.playerStats.updateRank(answer.userId);
 
+    // ─── Achievements ─────────────────────────────
+    // Deliberately last: by this point the judgement is stored and already
+    // broadcast, so nothing here can disturb a match in progress. grant()
+    // swallows its own errors, but the counting queries around it can throw.
+    try {
+      await this.awardAchievements(answer.userId, answer.tournamentId, {
+        decision: dto.decision,
+        currentStreak: stats?.currentStreak ?? 0,
+        totalAnswered: stats?.totalAnswered ?? 0,
+        matchStatus,
+        scoreUser,
+        scoreSystem,
+      });
+    } catch (err) {
+      console.error('Achievement award failed:', err?.message);
+    }
+
     return {
       judgement,
       score: {
@@ -167,6 +184,50 @@ export class JudgementsService {
         matchStatus,
       },
     };
+  }
+
+  // ─── Achievements earned by this ruling ─────────
+  private async awardAchievements(
+    userId: string,
+    tournamentId: string,
+    ctx: {
+      decision: string;
+      currentStreak: number;
+      totalAnswered: number;
+      matchStatus: string;
+      scoreUser: number;
+      scoreSystem: number;
+    },
+  ) {
+    if (ctx.decision === 'ACCEPTED') {
+      await this.achievements.onAnswerAccepted(userId, ctx.currentStreak);
+    }
+    // "Проба пера" is about the very first answer ever. Counting it from a
+    // streak of 1 would be a different thing entirely.
+    if (ctx.totalAnswered === 1) {
+      await this.achievements.grant(userId, 'first_answer');
+    }
+
+    const matchOver =
+      ctx.matchStatus === 'WON' || ctx.matchStatus === 'LOST' || ctx.matchStatus === 'FINISHED';
+    if (!matchOver) return;
+
+    if (ctx.matchStatus === 'WON') {
+      // A score of 12:11 is only reachable from 11:11, so this win came down
+      // to the final question.
+      const wasDecisive =
+        ctx.scoreUser === this.MAX_SCORE && ctx.scoreSystem === this.MAX_SCORE - 1;
+      await this.achievements.onTournamentWon(userId, wasDecisive);
+    }
+
+    // Accuracy is judged per tournament, so it is counted from this match's
+    // judgements rather than from lifetime statistics.
+    const judged = await this.prisma.judgement.findMany({
+      where: { answer: { userId, tournamentId } },
+      select: { decision: true },
+    });
+    const accepted = judged.filter((j) => j.decision === 'ACCEPTED').length;
+    await this.achievements.onTournamentFinished(userId, accepted, judged.length);
   }
 
   // ─── Derive match status from the current score ──

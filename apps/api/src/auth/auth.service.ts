@@ -14,6 +14,7 @@ import { LoginDto } from './dto/login.dto';
 import { VerificationCodesService } from './verification-codes.service';
 import { GoogleAuthDto } from './dto/google-auth.dto';
 import { OAuth2Client } from 'google-auth-library';
+import { AchievementsService } from '../achievements/achievements.service';
 
 @Injectable()
 export class AuthService {
@@ -23,7 +24,18 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly mail: MailService,
     private readonly verificationCodes: VerificationCodesService,
+    private readonly achievements: AchievementsService,
   ) {}
+
+  /**
+   * "Первый шаг" — awarded on any successful sign-in rather than at
+   * registration, so accounts created before achievements existed also get
+   * it. Fired without awaiting: grant() is idempotent and swallows its own
+   * errors, and nothing about a badge should be able to delay a login.
+   */
+  private awardFirstLogin(userId: string) {
+    void this.achievements.grant(userId, 'first_login').catch(() => {});
+  }
 
   async register(dto: RegisterDto) {
     // Check email uniqueness
@@ -75,6 +87,7 @@ export class AuthService {
 
     // Generate tokens
     const tokens = await this.generateTokens(user.id, user.email, user.role);
+    this.awardFirstLogin(user.id);
 
     // Send verification code
     await this.sendVerificationCode(user.email, dto.language || 'ru');
@@ -121,6 +134,7 @@ export class AuthService {
 
     // Generate tokens
     const tokens = await this.generateTokens(user.id, user.email, user.role);
+    this.awardFirstLogin(user.id);
 
     return {
       user: {
@@ -281,6 +295,7 @@ export class AuthService {
     }
 
     const tokens = await this.generateTokens(user.id, user.email, user.role);
+    this.awardFirstLogin(user.id);
 
     return {
       user: {

@@ -7,10 +7,14 @@ import {
 import * as argon2 from 'argon2';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { AchievementsService } from '../achievements/achievements.service';
 
 @Injectable()
 export class ProfilesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly achievements: AchievementsService,
+  ) {}
 
   // ─── Get my full profile ──────────────────────
   async getMyProfile(userId: string) {
@@ -107,10 +111,20 @@ export class ProfilesService {
       data.nicknameChangedAt = new Date();
     }
 
-    return this.prisma.profile.update({
+    const updated = await this.prisma.profile.update({
       where: { userId },
       data,
     });
+
+    // "Лицо сообщества" — avatar, bio and country all filled in. Checked on
+    // the saved row rather than on the incoming payload, because a partial
+    // update leaves the other fields as they were. Not awaited: a badge must
+    // never stand between the user and a saved profile.
+    if (this.achievements.isProfileComplete(updated)) {
+      void this.achievements.grant(userId, 'profile_complete').catch(() => {});
+    }
+
+    return updated;
   }
 
   // ─── My answer history ────────────────────────
