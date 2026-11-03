@@ -8,16 +8,47 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      # Plain OpenSSH from the runner, the way mycongregation-server deploys.
+      # No third-party action sees the server key, and the connection is
+      # refused unless the server proves it is ours: its ed25519 host key is
+      # pinned below (public, not a secret; read from the server itself over
+      # an already-trusted connection on 3 November 2026, fingerprint
+      # SHA256:4D/DccTsV7EWBzKxrLq3Z477GhzXi3UW01Z68mVnP/E).
+      - name: Prepare SSH (pinned host key)
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          HOST_KEY: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPcD2wm0TtxxKcQtVhtRf9+73X4/MBxdKTITdtl2mPu/
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "deploy-target $HOST_KEY" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host deploy-target
+            HostName $SSH_HOST
+            User $SSH_USER
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            HostKeyAlias deploy-target
+            HostKeyAlgorithms ssh-ed25519
+            UserKnownHostsFile ~/.ssh/known_hosts
+            StrictHostKeyChecking yes
+            BatchMode yes
+            ConnectTimeout 30
+            ServerAliveInterval 30
+            ServerAliveCountMax 4
+          EOF
+          chmod 600 ~/.ssh/config
+
       - name: Deploy to server via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          command_timeout: 15m
-          script: |
+        timeout-minutes: 15
+        # -n: the remote script never reads the runner's stdin. Its exit code
+        # is ssh's exit code, so a failed or rolled-back release turns the run
+        # red exactly as before.
+        run: |
+          ssh -n deploy-target '
             set -e
             cd /root/30sec
             echo "-> Pulling latest code..."
@@ -25,3 +56,8 @@ jobs:
             # Build, health wait, smoke checks and rollback live in the
             # repository so they can be reviewed and tested — see the file.
             sh scripts/deploy-api.sh
+          '
+
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key ~/.ssh/known_hosts ~/.ssh/config
