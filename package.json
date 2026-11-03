@@ -45,7 +45,7 @@
     "geoip-lite": "^1.4.10",
     "google-auth-library": "^10.0.0",
     "ioredis": "^5.4.1",
-    "nodemailer": "^8.0.3",
+    "nodemailer": "^10.1.4",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
