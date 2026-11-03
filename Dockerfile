@@ -1,5 +1,13 @@
+# Node is pinned to an exact release, not a moving tag such as node:24-alpine.
+# A moving tag is resolved once and then cached on the server, so security
+# releases never arrived on their own (Node 20.20.1 ran in production while
+# 20.20.2 was out). An exact tag makes every change a visible pull request:
+# Dependabot (.github/dependabot.yml) proposes the next release, CI tests it,
+# and the deploy smoke-checks it and rolls back if it fails.
+# Alpine 3.23 is the release the Node 20 image already ran on, so this change
+# moves Node alone; Alpine moves separately when 3.23 nears its end.
 # ---- Build stage ----
-FROM node:20-alpine AS builder
+FROM node:24.22.2-alpine3.23 AS builder
 
 WORKDIR /app
 
@@ -22,7 +30,7 @@ RUN npx jest --ci
 RUN npm run build
 
 # ---- Production stage ----
-FROM node:20-alpine AS production
+FROM node:24.22.2-alpine3.23 AS production
 
 WORKDIR /app
 
