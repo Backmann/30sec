@@ -2,8 +2,8 @@
 # Run the smoke checks without Node on the host.
 #
 # This server has no Node.js installed — the API only ever runs inside Docker.
-# So the checks run in a throwaway container built from the same base image the
-# project already pulls, which means no download and no install.
+# So the checks run in a throwaway container of the API's own image — the same
+# Node the API runs on, nothing to download, nothing to install.
 #
 #   ./scripts/smoke.sh                        # checks https://30sec.org
 #   ./scripts/smoke.sh http://127.0.0.1:3000  # checks the container directly
@@ -18,4 +18,4 @@ TARGET=${1:-https://30sec.org}
 
 exec docker run --rm --network host \
   -v "$SCRIPT_DIR":/scripts:ro \
-  node:20-alpine node /scripts/smoke.mjs "$TARGET"
+  --entrypoint node 30sec-api /scripts/smoke.mjs "$TARGET"
