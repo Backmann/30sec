@@ -1,0 +1,32 @@
+name: CI
+
+# Runs on every pull request, before anything reaches the server.
+#
+# Until now the tests ran only inside the server's image build, i.e. after a
+# merge — and a pull request (Dependabot's included) arrived untested. This
+# job builds the same Dockerfile on the same base image (Alpine/musl, so native
+# modules such as argon2 and the Prisma engine are the real ones) and runs:
+#   - the unit tests and the TypeScript build (inside the builder stage),
+#   - the integration tests: real Prisma against a throwaway Postgres,
+#   - the production stage, so a broken `npm install --omit=dev` or a missing
+#     copied file shows up here, not during a deploy.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unit tests, build and integration tests (real Postgres)
+        run: sh scripts/test-integration.sh
+
+      - name: Production image builds
+        run: docker build -t 30sec-api-ci .
+
+      - name: Node version inside the production image
+        run: docker run --rm --entrypoint node 30sec-api-ci -v
