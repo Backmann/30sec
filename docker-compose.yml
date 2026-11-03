@@ -77,7 +77,9 @@ services:
     image: nginx:alpine
     container_name: 30sec-nginx
     healthcheck:
-      test: ["CMD-SHELL", "wget -S -O /dev/null http://127.0.0.1/ 2>&1 | grep -q 'Server: nginx'"]
+      # Hits the 127.0.0.1-only probe in 00-catch-all.conf; a plain request to
+      # 127.0.0.1/ would now fall into the catch-all and get no answer.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/nginx-health"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -87,6 +89,7 @@ services:
       - '80:80'
       - '443:443'
     volumes:
+      - ./docker/nginx/00-catch-all.conf:/etc/nginx/conf.d/00-catch-all.conf:ro
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ./.htpasswd:/etc/nginx/.htpasswd:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
