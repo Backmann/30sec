@@ -1,0 +1,39 @@
+# Weekly update proposals, each as a pull request that CI tests before
+# anyone merges it. Nothing is merged automatically.
+#
+# Major versions are ignored on purpose. They are decisions, not routine:
+# Node 26 waits until Prisma lists it as supported, and NestJS 11+/Sentry 10
+# were deferred after the August audit because they need code changes.
+# Security fixes are not affected by these ignores — Dependabot security
+# updates are configured in the repository settings, not here.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]
