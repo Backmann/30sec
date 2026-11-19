@@ -7,7 +7,7 @@
 # Alpine 3.23 is the release the Node 20 image already ran on, so this change
 # moves Node alone; Alpine moves separately when 3.23 nears its end.
 # ---- Build stage ----
-FROM node:24.22.2-alpine3.23 AS builder
+FROM node:24.22.3-alpine3.23 AS builder
 
 # The Prisma CLI sends usage data to checkpoint.prisma.io on every command, from
 # a detached child process it leaves behind (`prisma generate` here, `prisma
@@ -37,7 +37,7 @@ RUN npx jest --ci
 RUN npm run build
 
 # ---- Production stage ----
-FROM node:24.22.2-alpine3.23 AS production
+FROM node:24.22.3-alpine3.23 AS production
 
 ENV CHECKPOINT_DISABLE=1
 
