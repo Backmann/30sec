@@ -2,6 +2,11 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: 30sec-postgres
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    stop_grace_period: 30s
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-sec30db}
@@ -20,6 +25,10 @@ services:
   redis:
     image: redis:7-alpine
     container_name: 30sec-redis
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     restart: unless-stopped
     command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required - set it in .env, there is no default}
     ports:
@@ -37,6 +46,10 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: 30sec-api
+    deploy:
+      resources:
+        limits:
+          memory: 768M
     restart: unless-stopped
     # A small init (Docker's own tini) is PID 1 and reaps orphans. Without it the
     # CMD's `sh -c "… && node …"` makes node PID 1 (busybox sh execs the last
@@ -68,6 +81,10 @@ services:
       context: /root/30sec-frontend
       dockerfile: Dockerfile
     container_name: 30sec-frontend
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     restart: unless-stopped
     ports:
       - '127.0.0.1:3001:3001'
@@ -83,6 +100,10 @@ services:
   nginx:
     image: nginx:alpine
     container_name: 30sec-nginx
+    deploy:
+      resources:
+        limits:
+          memory: 128M
     healthcheck:
       # Hits the 127.0.0.1-only probe in 00-catch-all.conf; a plain request to
       # 127.0.0.1/ would now fall into the catch-all and get no answer.
@@ -112,9 +133,14 @@ services:
   autoheal:
     image: willfarrell/autoheal:latest
     container_name: 30sec-autoheal
+    deploy:
+      resources:
+        limits:
+          memory: 64M
     restart: always
     environment:
       AUTOHEAL_CONTAINER_LABEL: all
+      AUTOHEAL_DEFAULT_STOP_TIMEOUT: "30"
       AUTOHEAL_INTERVAL: 30
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
