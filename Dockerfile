@@ -9,6 +9,13 @@
 # ---- Build stage ----
 FROM node:24.22.2-alpine3.23 AS builder
 
+# The Prisma CLI sends usage data to checkpoint.prisma.io on every command, from
+# a detached child process it leaves behind (`prisma generate` here, `prisma
+# migrate deploy` in the CMD below). Nothing of ours needs it – off in both
+# stages. The child of `migrate deploy` was the zombie under node on the server
+# (19.11.2026); see `init: true` in docker-compose.yml.
+ENV CHECKPOINT_DISABLE=1
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -31,6 +38,8 @@ RUN npm run build
 
 # ---- Production stage ----
 FROM node:24.22.2-alpine3.23 AS production
+
+ENV CHECKPOINT_DISABLE=1
 
 WORKDIR /app
 

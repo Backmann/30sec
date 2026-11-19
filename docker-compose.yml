@@ -38,6 +38,13 @@ services:
       dockerfile: Dockerfile
     container_name: 30sec-api
     restart: unless-stopped
+    # A small init (Docker's own tini) is PID 1 and reaps orphans. Without it the
+    # CMD's `sh -c "… && node …"` makes node PID 1 (busybox sh execs the last
+    # command), and node never waits for children it did not start: a process
+    # left behind at start stayed a zombie for the container's whole life (found
+    # on the server 19.11.2026 – `[MainThread] <defunct>` under node). It also
+    # passes SIGTERM on, so `docker stop` no longer waits 10 s for SIGKILL.
+    init: true
     env_file:
       - .env
     ports:

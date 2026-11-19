@@ -30,3 +30,14 @@ jobs:
 
       - name: Node version inside the production image
         run: docker run --rm --entrypoint node 30sec-api-ci -v
+
+      # Both halves of the fix for the zombie under node (19.11.2026): Prisma's
+      # telemetry child is not started, and an init reaps any orphan anyway.
+      - name: No zombie at start (Prisma telemetry off, init in compose)
+        run: |
+          docker run --rm --entrypoint sh 30sec-api-ci -c 'test "$CHECKPOINT_DISABLE" = 1' ||
+            { echo "CHECKPOINT_DISABLE=1 is missing in the production image"; exit 1; }
+          touch .env
+          init=$(POSTGRES_PASSWORD=ci REDIS_PASSWORD=ci docker compose config --format json | jq -r '.services.api.init')
+          [ "$init" = true ] || { echo "the api service in docker-compose.yml has no init: true (got: $init)"; exit 1; }
+          echo "OK: telemetry off in the image, init for the api"
